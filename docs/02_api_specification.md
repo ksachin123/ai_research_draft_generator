@@ -1,0 +1,487 @@
+# AI Research Draft Generator - API Specification
+
+## 1. API Overview
+
+The AI Research Draft Generator exposes RESTful APIs for knowledge base management and report generation. All APIs return JSON responses and use standard HTTP status codes.
+
+### 1.1 Base Configuration
+- **Base URL**: `http://localhost:5000/api`
+- **Content-Type**: `application/json`
+- **Documentation**: `http://localhost:5000/swagger` (Swagger UI)
+
+### 1.2 Standard Response Format
+```json
+{
+  "success": true,
+  "data": {},
+  "message": "Operation completed successfully",
+  "timestamp": "2025-09-07T10:30:00Z"
+}
+```
+
+### 1.3 Error Response Format
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid ticker format",
+    "details": {}
+  },
+  "timestamp": "2025-09-07T10:30:00Z"
+}
+```
+
+## 2. Company Management APIs
+
+### 2.1 List All Companies
+**Endpoint**: `GET /api/companies`
+
+**Description**: Retrieve list of all companies in the knowledge base with basic statistics.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "companies": [
+      {
+        "ticker": "AAPL",
+        "company_name": "Apple Inc.",
+        "knowledge_base_status": "active",
+        "last_updated": "2025-09-07T10:30:00Z",
+        "stats": {
+          "total_reports": 4,
+          "total_chunks": 156,
+          "last_refresh": "2025-09-07T09:15:00Z"
+        }
+      }
+    ],
+    "total_companies": 1
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `500`: Server error
+
+### 2.2 Get Company Details
+**Endpoint**: `GET /api/companies/{ticker}`
+
+**Description**: Get detailed information about a specific company.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "company_name": "Apple Inc.",
+    "knowledge_base_status": "active",
+    "last_updated": "2025-09-07T10:30:00Z",
+    "stats": {
+      "total_reports": 4,
+      "total_chunks": 156,
+      "processed_files": [
+        "APPLE_20250613_0902.pdf",
+        "APPLE_20250709_0418.pdf"
+      ],
+      "investment_data_files": [
+        "investmentthesis.json",
+        "investmentdrivers.json",
+        "risks.json"
+      ]
+    },
+    "investment_summary": {
+      "rating": "Overweight",
+      "target_price": "240.00",
+      "last_updated": "2025-09-07T10:30:00Z"
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Server error
+
+## 3. Knowledge Base Management APIs
+
+### 3.1 Refresh Knowledge Base
+**Endpoint**: `POST /api/companies/{ticker}/knowledge-base/refresh`
+
+**Description**: Trigger knowledge base refresh for a company, processing new PDF reports and updating investment data.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Request Body**:
+```json
+{
+  "force_reprocess": false,
+  "include_investment_data": true
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "refresh_aapl_20250907_103000",
+    "status": "processing",
+    "estimated_duration": "2-5 minutes"
+  }
+}
+```
+
+**Status Codes**:
+- `202`: Accepted (processing started)
+- `400`: Invalid request
+- `404`: Company data not found
+- `500`: Server error
+
+### 3.2 Get Knowledge Base Status
+**Endpoint**: `GET /api/companies/{ticker}/knowledge-base/status`
+
+**Description**: Get current status of knowledge base for a company.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "active",
+    "last_refresh": "2025-09-07T09:15:00Z",
+    "processing_jobs": [
+      {
+        "job_id": "refresh_aapl_20250907_103000",
+        "status": "completed",
+        "started_at": "2025-09-07T10:30:00Z",
+        "completed_at": "2025-09-07T10:33:00Z"
+      }
+    ],
+    "stats": {
+      "total_documents": 4,
+      "total_chunks": 156,
+      "new_files_processed": 0,
+      "updated_files": 3
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Server error
+
+### 3.3 Get Investment Data
+**Endpoint**: `GET /api/companies/{ticker}/investment-data`
+
+**Description**: Retrieve current investment data for a company.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "investment_thesis": {
+      "content": "With the largest base of pent up iPhone demand ever...",
+      "target_price": "240.00",
+      "rating": "Overweight",
+      "last_updated": "2025-09-07T10:30:00Z"
+    },
+    "investment_drivers": [
+      "Positive iPhone build revisions / clearer signs of accelerating replacement cycles",
+      "Services revenue growth reacceleration"
+    ],
+    "risks": {
+      "upside": [
+        "iPhone 17 outperforms expectations",
+        "Apple Intelligence adoption surprises to the upside"
+      ],
+      "downside": [
+        "Weak consumer spending limits iPhone upgrade rates",
+        "Limited progress on AI features"
+      ]
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company or data not found
+- `500`: Server error
+
+## 4. Document Management APIs
+
+### 4.1 Upload New Document
+**Endpoint**: `POST /api/companies/{ticker}/documents/upload`
+
+**Description**: Upload a new document (earnings transcript, press release, etc.) for analysis.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Request**: Multipart form data
+- `file` (file): Document file (PDF, TXT, or DOCX)
+- `document_type` (string): Type of document ("earnings_transcript", "press_release", "analyst_note", "other")
+- `description` (string, optional): Description of the document
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "upload_id": "upload_aapl_20250907_103500",
+    "file_name": "AAPL_Q3_2025_Earnings_Transcript.pdf",
+    "file_size": 2048576,
+    "document_type": "earnings_transcript",
+    "status": "uploaded"
+  }
+}
+```
+
+**Status Codes**:
+- `201`: Created
+- `400`: Invalid file or request
+- `413`: File too large (>5MB)
+- `500`: Server error
+
+### 4.2 List Uploaded Documents
+**Endpoint**: `GET /api/companies/{ticker}/documents`
+
+**Description**: List all uploaded documents for analysis.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Query Parameters**:
+- `document_type` (string, optional): Filter by document type
+- `limit` (integer, optional): Number of results (default: 50)
+- `offset` (integer, optional): Pagination offset (default: 0)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "documents": [
+      {
+        "upload_id": "upload_aapl_20250907_103500",
+        "file_name": "AAPL_Q3_2025_Earnings_Transcript.pdf",
+        "document_type": "earnings_transcript",
+        "uploaded_at": "2025-09-07T10:35:00Z",
+        "processed": true,
+        "analysis_status": "completed"
+      }
+    ],
+    "total": 1,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Server error
+
+## 5. Report Generation APIs
+
+### 5.1 Generate Draft Report
+**Endpoint**: `POST /api/companies/{ticker}/reports/generate`
+
+**Description**: Generate a draft research report based on uploaded document and existing knowledge base.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Request Body**:
+```json
+{
+  "upload_id": "upload_aapl_20250907_103500",
+  "analysis_type": "earnings_update",
+  "focus_areas": [
+    "revenue_guidance",
+    "margin_trends",
+    "new_products"
+  ],
+  "include_context": true
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "report_id": "report_aapl_20250907_104000",
+    "status": "generated",
+    "analysis_type": "earnings_update",
+    "generated_at": "2025-09-07T10:40:00Z",
+    "content": {
+      "executive_summary": "Apple's Q3 2025 results showed...",
+      "key_changes": [
+        {
+          "category": "Revenue Guidance",
+          "current": "Updated Q4 guidance to $92-95B vs prior $90-93B",
+          "previous": "Q4 guidance of $90-93B",
+          "impact": "positive",
+          "confidence": "high"
+        }
+      ],
+      "new_insights": [
+        "Services revenue acceleration driven by App Store growth",
+        "iPhone 16 pre-orders exceeding expectations"
+      ],
+      "risks_updates": {
+        "new_risks": [],
+        "mitigated_risks": ["Supply chain constraints have been resolved"]
+      },
+      "investment_thesis_impact": {
+        "rating_change": "none",
+        "target_price_change": "none",
+        "key_drivers_affected": ["Services revenue growth reacceleration"]
+      }
+    },
+    "sources": [
+      {
+        "type": "uploaded_document",
+        "file_name": "AAPL_Q3_2025_Earnings_Transcript.pdf",
+        "relevance_score": 0.95
+      },
+      {
+        "type": "knowledge_base",
+        "document": "APPLE_20250721_0552.pdf",
+        "relevance_score": 0.87
+      }
+    ]
+  }
+}
+```
+
+**Status Codes**:
+- `201`: Created
+- `400`: Invalid request or missing document
+- `404`: Company or upload not found
+- `500`: Server error
+
+### 5.2 Get Report Status
+**Endpoint**: `GET /api/companies/{ticker}/reports/{report_id}`
+
+**Description**: Get status and content of a generated report.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+- `report_id` (string): Report identifier
+
+**Response**: Same as Generate Draft Report response
+
+**Status Codes**:
+- `200`: Success
+- `404`: Report not found
+- `500`: Server error
+
+### 5.3 List Generated Reports
+**Endpoint**: `GET /api/companies/{ticker}/reports`
+
+**Description**: List all generated reports for a company.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol
+
+**Query Parameters**:
+- `analysis_type` (string, optional): Filter by analysis type
+- `limit` (integer, optional): Number of results (default: 20)
+- `offset` (integer, optional): Pagination offset (default: 0)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "reports": [
+      {
+        "report_id": "report_aapl_20250907_104000",
+        "analysis_type": "earnings_update",
+        "generated_at": "2025-09-07T10:40:00Z",
+        "source_document": "AAPL_Q3_2025_Earnings_Transcript.pdf",
+        "status": "generated"
+      }
+    ],
+    "total": 1,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Server error
+
+## 6. System Health APIs
+
+### 6.1 Health Check
+**Endpoint**: `GET /api/health`
+
+**Description**: Check system health and dependencies.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2025-09-07T10:30:00Z",
+    "version": "1.0.0",
+    "dependencies": {
+      "chroma_db": "connected",
+      "openai_api": "available",
+      "file_system": "accessible"
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Healthy
+- `503`: Unhealthy
+
+## 7. Error Codes Reference
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Request validation failed |
+| `FILE_TOO_LARGE` | 413 | Uploaded file exceeds 5MB limit |
+| `UNSUPPORTED_FORMAT` | 400 | Unsupported file format |
+| `COMPANY_NOT_FOUND` | 404 | Company ticker not found |
+| `DOCUMENT_NOT_FOUND` | 404 | Document or upload not found |
+| `PROCESSING_ERROR` | 500 | Error in document processing |
+| `AI_SERVICE_ERROR` | 502 | OpenAI API error |
+| `DATABASE_ERROR` | 500 | Chroma database error |
+| `INSUFFICIENT_DATA` | 400 | Insufficient knowledge base data |
+
+## 8. Rate Limits & Constraints
+
+- **File Upload**: Max 5MB per file
+- **Concurrent Processing**: Max 3 knowledge base refreshes
+- **API Rate Limit**: 100 requests per minute per client
+- **Document Retention**: Uploaded documents retained for 30 days
+- **Report History**: Last 100 reports per company
