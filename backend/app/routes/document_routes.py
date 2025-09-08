@@ -32,6 +32,13 @@ upload_parser.add_argument('document_type', type=str, required=True, help='Type 
                           choices=['10-K', '10-Q', '8-K', 'earnings_call', 'investor_presentation', 'press_release', 'other'])
 upload_parser.add_argument('description', type=str, required=False, help='Document description')
 
+# Analysis trigger parser
+analyze_parser = document_bp.parser()
+analyze_parser.add_argument('upload_ids', type=str, action='append', required=True, 
+                           help='List of upload IDs to analyze', location='json')
+analyze_parser.add_argument('analysis_options', type=dict, required=False, 
+                           help='Analysis options', location='json')
+
 # Response models
 api_response_model = document_bp.model('ApiResponse', {
     'success': fields.Boolean(required=True, description='Operation success status'),
@@ -156,163 +163,8 @@ class DocumentUpload(Resource):
                 processing_status = "uploaded"
                 logger.info(f"Document uploaded and ready for analysis: {upload_id} ({len(document_content)} chars)")
                 
-                # Trigger initial analysis automatically
-                logger.info("=== Starting initial analysis generation ===")
-                try:
-                    # Generate embedding for similarity search
-                    logger.debug("Generating document embedding for similarity search...")
-                    doc_text_for_embedding = document_content[:2000]  # Use first 2000 chars
-                    logger.debug(f"Using first {len(doc_text_for_embedding)} chars for embedding")
-                    
-                    doc_embedding = ai_service.generate_embedding(doc_text_for_embedding)
-                    logger.info(f"Document embedding generated successfully. Vector dimension: {len(doc_embedding)}")
-                    
-                    # Search for similar documents with enhanced context retrieval
-                    logger.debug(f"Searching for comprehensive context documents with enhanced retrieval for ticker: {ticker.upper()}")
-                    results = db_service.query_historical_financial_data(
-                        ticker.upper(),
-                        doc_embedding,
-                        n_results=15,  # Increased for comprehensive context
-                        prefer_recent=True
-                    )
-                    logger.info(f"Enhanced knowledge base search completed. Found {len(results.get('documents', [[]])[0]) if results.get('documents') else 0} comprehensive context documents with financial data priority")
-                    
-                    context_documents = []
-                    if results["documents"]:
-                        logger.debug("Processing similar documents for context...")
-                        for i in range(len(results["documents"][0])):
-                            context_doc = {
-                                "document": results["documents"][0][i],
-                                "metadata": results["metadatas"][0][i],
-                                "distance": results["distances"][0][i]
-                            }
-                            context_documents.append(context_doc)
-                            logger.debug(f"Context doc {i+1}: {results['metadatas'][0][i].get('file_name', 'Unknown')} "
-                                       f"(distance: {results['distances'][0][i]:.3f})")
-                    else:
-                        logger.warning("No similar documents found in knowledge base")
-                    
-                    # Generate initial analysis with comparative capabilities
-                    logger.info(f"Generating initial analysis using {len(context_documents)} context documents...")
-                    
-                    # Check if estimates data is available for comparative analysis
-                    try:
-                        estimates_data = kb_service.get_estimates_data(ticker.upper())
-                        has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
-                        logger.info(f"Estimates data available for {ticker}: {has_estimates}")
-                    except Exception as e:
-                        logger.warning(f"Failed to check estimates data: {str(e)}")
-                        has_estimates = False
-                        estimates_data = {}
-                    
-                    if has_estimates:
-                        # Use enhanced document processing with comparison
-                        logger.info("Using enhanced processing with comparative analysis")
-                        # Extract document metrics and perform comparison
-                        document_metrics = doc_service._extract_document_metrics(document_content, None)
-                        comparative_data = doc_service._perform_comparative_analysis(
-                            ticker.upper(), document_metrics, estimates_data, None
-                        )
-                        
-                        # Generate initial analysis first (core functionality)
-                        initial_analysis = ai_service.generate_initial_analysis(
-                            document_content,
-                            context_documents,
-                            document_type
-                        )
-                        
-                        # Then generate additional comparative analysis
-                        try:
-                            comparative_analysis = ai_service.generate_comparative_analysis(
-                                document_content,
-                                context_documents,
-                                comparative_data,
-                                document_type
-                            )
-                            # Merge comparative insights into the initial analysis
-                            initial_analysis["comparative_analysis"] = comparative_analysis
-                            initial_analysis["comparative_data"] = comparative_data
-                            initial_analysis["document_metrics"] = document_metrics
-                            initial_analysis["has_estimates_comparison"] = True
-                            logger.info("Enhanced analysis with comparative insights generated")
-                        except Exception as comp_error:
-                            logger.warning(f"Comparative analysis failed, using initial analysis only: {str(comp_error)}")
-                            initial_analysis["comparative_data"] = comparative_data
-                            initial_analysis["document_metrics"] = document_metrics
-                            initial_analysis["has_estimates_comparison"] = True
-                        
-                    else:
-                        # Use regular initial analysis without estimates comparison 
-                        logger.info("Using standard initial analysis without estimates comparison")
-                        initial_analysis = ai_service.generate_initial_analysis(
-                            document_content, 
-                            context_documents, 
-                            document_type
-                        )
-                        initial_analysis["has_estimates_comparison"] = False
-                    logger.info("Initial analysis generated successfully")
-                    logger.debug(f"Analysis structure: {list(initial_analysis.keys()) if isinstance(initial_analysis, dict) else 'Non-dict response'}")
-                    
-                    # Extract generation metadata (including prompt) from the analysis
-                    generation_metadata = initial_analysis.pop("_generation_metadata", {})
-                    
-                    # Update content data with analysis and generation details
-                    logger.debug("Updating content data with analysis results...")
-                    content_data["analysis"] = initial_analysis
-                    content_data["analysis_date"] = datetime.utcnow().isoformat() + "Z"
-                    content_data["status"] = "analysis_ready"
-                    
-                    # Store generation metadata including the prompt for review purposes
-                    content_data["generation_metadata"] = {
-                        "prompt_used": generation_metadata.get("prompt_used", ""),
-                        "model": generation_metadata.get("model", ""),
-                        "temperature": generation_metadata.get("temperature", 0.3),
-                        "max_tokens": generation_metadata.get("max_tokens", 2500),
-                        "analysis_type": generation_metadata.get("analysis_type", "general"),
-                        "context_documents_count": generation_metadata.get("context_documents_count", 0),
-                        "generation_timestamp": datetime.utcnow().isoformat() + "Z"
-                    }
-                    logger.info("Added generation metadata including prompt to content data for review purposes")
-                    
-                    content_data["context_sources"] = [
-                        {
-                            "type": "knowledge_base",
-                            "document": doc["metadata"].get("file_name", "Unknown"),
-                            "relevance_score": round(1.0 - doc["distance"], 2)
-                        }
-                        for doc in context_documents[:3]  # Top 3 sources
-                    ]
-                    logger.info(f"Added {len(content_data['context_sources'])} context sources to analysis")
-                    
-                    # Save updated content with analysis
-                    try:
-                        with open(content_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(content_data, f, indent=2, ensure_ascii=False)
-                        logger.info(f"Analysis results saved to: {content_file_path}")
-                    except Exception as save_analysis_error:
-                        logger.error(f"Failed to save analysis results: {str(save_analysis_error)}")
-                        raise
-                    
-                    processing_status = "analysis_ready"
-                    logger.info(f"Initial analysis completed successfully for {upload_id}")
-                    
-                except Exception as analysis_error:
-                    logger.error(f"Failed to generate initial analysis for {upload_id}: {str(analysis_error)}")
-                    logger.error(f"Analysis error type: {type(analysis_error).__name__}")
-                    logger.error(f"Analysis error details: {str(analysis_error)}")
-                    
-                    content_data["status"] = "analysis_error"
-                    content_data["analysis_error"] = str(analysis_error)
-                    content_data["analysis_error_type"] = type(analysis_error).__name__
-                    
-                    try:
-                        with open(content_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(content_data, f, indent=2, ensure_ascii=False)
-                        logger.info(f"Error state saved to: {content_file_path}")
-                    except Exception as save_error_error:
-                        logger.error(f"Failed to save error state: {str(save_error_error)}")
-                    
-                    processing_status = "analysis_error"
+                # Document is now uploaded and ready for analysis when triggered
+                # Analysis will be triggered separately via the /analyze endpoint
                 
             except Exception as content_error:
                 processing_status = "error"
@@ -332,38 +184,22 @@ class DocumentUpload(Resource):
                 "metadata": doc_metadata
             }
             
-            # Include analysis data in response if analysis completed successfully
+            # Include basic document info in response
             response_data = {
                 "uploaded_files": [document_info]
             }
             
-            if processing_status == "analysis_ready" and 'content_data' in locals() and content_data:
-                logger.info("Including complete analysis data in upload response")
-                analysis_response = {
-                    "analysis": content_data.get("analysis", {}),
-                    "analysis_date": content_data.get("analysis_date"),
-                    "generation_metadata": content_data.get("generation_metadata", {}),
-                    "context_sources": content_data.get("context_sources", []),
-                    "document_info": {
-                        "upload_id": upload_id,
-                        "filename": uploaded_file.filename,
-                        "ticker": ticker.upper(),
-                        "document_type": document_type,
-                        "processing_status": processing_status
-                    }
-                }
-                response_data["analysis_results"] = analysis_response
-                logger.info(f"Analysis data included in response with {len(analysis_response.get('context_sources', []))} context sources")
-            
+            # Since we're not doing immediate analysis, we won't include analysis results in upload response
+            # Analysis will be triggered separately via the /analyze endpoint
             
             logger.info(f"Document upload completed successfully: {upload_id}")
             logger.info(f"Final processing status: {processing_status}")
-            logger.info(f"Response includes analysis data: {'analysis_results' in response_data}")
+            logger.info(f"Document ready for analysis when requested")
             
             return {
                 "success": True,
                 "data": response_data,
-                "message": "Document uploaded and analysis completed" if processing_status == "analysis_ready" else "Document uploaded and ready for analysis",
+                "message": "Document uploaded successfully and ready for analysis",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
             
@@ -738,6 +574,247 @@ class DocumentList(Resource):
                     "code": "DATABASE_ERROR",
                     "message": f"Failed to retrieve documents for {ticker.upper()}",
                     "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+@document_bp.route('/companies/<string:ticker>/documents/analyze')
+class DocumentBatchAnalysis(Resource):
+    @document_bp.marshal_with(api_response_model)
+    def post(self, ticker):
+        """Trigger analysis for multiple uploaded documents"""
+        logger.info(f"=== Starting batch analysis for ticker: {ticker} ===")
+        
+        try:
+            # Parse request data
+            data = request.get_json() or {}
+            upload_ids = data.get('upload_ids', [])
+            analysis_options = data.get('analysis_options', {})
+            
+            logger.info(f"Batch analysis request - Ticker: {ticker}, Upload IDs: {upload_ids}")
+            
+            if not upload_ids:
+                return {
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "No upload IDs provided",
+                        "details": {}
+                    },
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }, 400
+            
+            upload_dir = os.path.join(app_config.UPLOAD_FOLDER, ticker.upper())
+            analysis_results = []
+            failed_analyses = []
+            
+            # Process each document for analysis
+            for upload_id in upload_ids:
+                try:
+                    logger.info(f"Starting analysis for upload_id: {upload_id}")
+                    content_file_path = os.path.join(upload_dir, f"{upload_id}_content.json")
+                    
+                    if not os.path.exists(content_file_path):
+                        logger.warning(f"Content file not found for upload_id: {upload_id}")
+                        failed_analyses.append({
+                            "upload_id": upload_id,
+                            "error": "Document not found"
+                        })
+                        continue
+                    
+                    # Load document data
+                    with open(content_file_path, 'r', encoding='utf-8') as f:
+                        content_data = json.load(f)
+                    
+                    # Skip if already analyzed (unless force re-analysis)
+                    if content_data.get("status") == "analysis_ready" and not analysis_options.get("force_reanalysis", False):
+                        logger.info(f"Skipping already analyzed document: {upload_id}")
+                        # Still include the existing analysis in results
+                        analysis_results.append({
+                            "upload_id": upload_id,
+                            "status": "already_analyzed",
+                            "analysis": content_data.get("analysis", {}),
+                            "analysis_date": content_data.get("analysis_date"),
+                            "generation_metadata": content_data.get("generation_metadata", {}),
+                            "context_sources": content_data.get("context_sources", [])
+                        })
+                        continue
+                    
+                    # Extract document info
+                    document_content = content_data.get("document_content", "")
+                    document_type = content_data.get("document_type", "other")
+                    
+                    if not document_content:
+                        logger.warning(f"No document content found for upload_id: {upload_id}")
+                        failed_analyses.append({
+                            "upload_id": upload_id,
+                            "error": "No document content available"
+                        })
+                        continue
+                    
+                    # Generate analysis (same logic as before but now triggered separately)
+                    logger.info(f"Generating analysis for {upload_id}...")
+                    
+                    # Generate embedding for similarity search
+                    doc_text_for_embedding = document_content[:2000]
+                    doc_embedding = ai_service.generate_embedding(doc_text_for_embedding)
+                    logger.debug(f"Document embedding generated for {upload_id}")
+                    
+                    # Search for similar documents with enhanced context retrieval
+                    results = db_service.query_historical_financial_data(
+                        ticker.upper(),
+                        doc_embedding,
+                        n_results=15,
+                        prefer_recent=True
+                    )
+                    
+                    context_documents = []
+                    if results["documents"]:
+                        for i in range(len(results["documents"][0])):
+                            context_doc = {
+                                "document": results["documents"][0][i],
+                                "metadata": results["metadatas"][0][i],
+                                "distance": results["distances"][0][i]
+                            }
+                            context_documents.append(context_doc)
+                    
+                    # Check if estimates data is available for comparative analysis
+                    try:
+                        estimates_data = kb_service.get_estimates_data(ticker.upper())
+                        has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
+                        logger.info(f"Estimates data available for {ticker}: {has_estimates}")
+                    except Exception as e:
+                        logger.warning(f"Failed to check estimates data: {str(e)}")
+                        has_estimates = False
+                        estimates_data = {}
+                    
+                    if has_estimates:
+                        # Use enhanced document processing with comparison
+                        logger.info(f"Using enhanced processing with comparative analysis for {upload_id}")
+                        document_metrics = doc_service._extract_document_metrics(document_content, None)
+                        comparative_data = doc_service._perform_comparative_analysis(
+                            ticker.upper(), document_metrics, estimates_data, None
+                        )
+                        
+                        # Generate initial analysis first
+                        initial_analysis = ai_service.generate_initial_analysis(
+                            document_content,
+                            context_documents,
+                            document_type
+                        )
+                        
+                        # Then generate additional comparative analysis
+                        try:
+                            comparative_analysis = ai_service.generate_comparative_analysis(
+                                document_content,
+                                context_documents,
+                                comparative_data,
+                                document_type
+                            )
+                            initial_analysis["comparative_analysis"] = comparative_analysis
+                            initial_analysis["comparative_data"] = comparative_data
+                            initial_analysis["document_metrics"] = document_metrics
+                            initial_analysis["has_estimates_comparison"] = True
+                            logger.info(f"Enhanced analysis with comparative insights generated for {upload_id}")
+                        except Exception as comp_error:
+                            logger.warning(f"Comparative analysis failed for {upload_id}, using initial analysis only: {str(comp_error)}")
+                            initial_analysis["comparative_data"] = comparative_data
+                            initial_analysis["document_metrics"] = document_metrics
+                            initial_analysis["has_estimates_comparison"] = True
+                        
+                    else:
+                        # Use regular initial analysis without estimates comparison 
+                        logger.info(f"Using standard initial analysis for {upload_id}")
+                        initial_analysis = ai_service.generate_initial_analysis(
+                            document_content, 
+                            context_documents, 
+                            document_type
+                        )
+                        initial_analysis["has_estimates_comparison"] = False
+                    
+                    # Extract generation metadata
+                    generation_metadata = initial_analysis.pop("_generation_metadata", {})
+                    
+                    # Update content data with analysis
+                    content_data["analysis"] = initial_analysis
+                    content_data["analysis_date"] = datetime.utcnow().isoformat() + "Z"
+                    content_data["status"] = "analysis_ready"
+                    content_data["generation_metadata"] = {
+                        "prompt_used": generation_metadata.get("prompt_used", ""),
+                        "model": generation_metadata.get("model", ""),
+                        "temperature": generation_metadata.get("temperature", 0.3),
+                        "max_tokens": generation_metadata.get("max_tokens", 2500),
+                        "analysis_type": generation_metadata.get("analysis_type", "general"),
+                        "context_documents_count": generation_metadata.get("context_documents_count", 0),
+                        "generation_timestamp": datetime.utcnow().isoformat() + "Z"
+                    }
+                    content_data["context_sources"] = [
+                        {
+                            "type": "knowledge_base",
+                            "document": doc["metadata"].get("file_name", "Unknown"),
+                            "relevance_score": round(1.0 - doc["distance"], 2)
+                        }
+                        for doc in context_documents[:3]
+                    ]
+                    
+                    # Save updated content with analysis
+                    with open(content_file_path, 'w', encoding='utf-8') as f:
+                        json.dump(content_data, f, indent=2, ensure_ascii=False)
+                    
+                    # Add to successful analysis results
+                    analysis_results.append({
+                        "upload_id": upload_id,
+                        "status": "analysis_completed",
+                        "analysis": initial_analysis,
+                        "analysis_date": content_data["analysis_date"],
+                        "generation_metadata": content_data["generation_metadata"],
+                        "context_sources": content_data["context_sources"],
+                        "document_info": {
+                            "filename": content_data.get("original_filename"),
+                            "document_type": content_data.get("document_type"),
+                            "upload_date": content_data.get("upload_date")
+                        }
+                    })
+                    
+                    logger.info(f"Analysis completed successfully for {upload_id}")
+                    
+                except Exception as doc_error:
+                    logger.error(f"Failed to analyze document {upload_id}: {str(doc_error)}")
+                    failed_analyses.append({
+                        "upload_id": upload_id,
+                        "error": str(doc_error)
+                    })
+            
+            # Prepare response
+            response_data = {
+                "analyzed_documents": analysis_results,
+                "failed_analyses": failed_analyses,
+                "total_requested": len(upload_ids),
+                "successful_analyses": len(analysis_results),
+                "failed_analyses_count": len(failed_analyses)
+            }
+            
+            success_message = f"Batch analysis completed. {len(analysis_results)} successful, {len(failed_analyses)} failed."
+            logger.info(f"Batch analysis results for {ticker}: {success_message}")
+            
+            return {
+                "success": True,
+                "data": response_data,
+                "message": success_message,
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except Exception as e:
+            logger.error(f"Batch analysis failed for {ticker}: {str(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            return {
+                "success": False,
+                "error": {
+                    "code": "BATCH_ANALYSIS_ERROR",
+                    "message": "Failed to perform batch analysis",
+                    "details": {"error_type": type(e).__name__, "error_message": str(e)}
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }, 500

@@ -27,7 +27,8 @@ import {
   Error as ErrorIcon,
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
-  AttachFile as AttachFileIcon
+  AttachFile as AttachFileIcon,
+  Analytics as AnalyticsIcon
 } from '@mui/icons-material';
 import { documentService, Document, DocumentAnalysis, UploadResponse } from '../../services/documentService';
 import DocumentAnalysisDisplay from './DocumentAnalysisDisplay';
@@ -85,7 +86,6 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
 
     // Upload files sequentially to avoid overwhelming the server
     const results: Document[] = [];
-    const analyses: DocumentAnalysis[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -115,12 +115,6 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
 
         results.push(uploadResponse.document);
 
-        // If analysis is included in upload response, add it to analyses
-        if (uploadResponse.analysis) {
-          console.log('Analysis included in upload response for:', file.name);
-          analyses.push(uploadResponse.analysis);
-        }
-
       } catch (error: any) {
         console.error(`Failed to upload ${file.name}:`, error);
         
@@ -140,41 +134,64 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
       onUploadComplete(results);
     }
 
-    // Show analysis results if available
-    if (analyses.length > 0) {
-      console.log('Displaying analysis results from upload response:', analyses);
-      setAnalysisResults(analyses);
-      setShowAnalysis(true);
-    } else if (results.length > 0) {
-      // Fallback: Fetch analysis results for successful uploads if not included in response
-      try {
-        console.log('Fetching analysis results for uploaded documents...');
-        const analysisPromises = results.map(doc => 
-          documentService.getAnalysis(ticker, doc.upload_id)
-        );
-        const fetchedAnalyses = await Promise.all(analysisPromises);
-        
-        console.log('Analysis results fetched successfully:', fetchedAnalyses);
-        setAnalysisResults(fetchedAnalyses);
-        setShowAnalysis(true);
-        
-      } catch (error: any) {
-        console.error('Failed to fetch analysis results:', error);
-        // Still clear uploads after delay even if analysis fetch fails
-        setTimeout(() => {
-          setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
-        }, 3000);
-      }
-    } else {
-      // Clear completed uploads after a delay if no successful results
-      setTimeout(() => {
-        setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
-      }, 3000);
-    }
-
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerBatchAnalysis = async () => {
+    const successfulUploads = uploadingFiles.filter(f => f.status === 'success' && f.document);
+    
+    if (successfulUploads.length === 0) {
+      setGlobalError('No successfully uploaded documents to analyze');
+      return;
+    }
+
+    try {
+      setGlobalError(null);
+      
+      // Update status to show analysis in progress
+      setUploadingFiles(prev => prev.map(f => 
+        f.status === 'success' ? { ...f, progress: 50 } : f
+      ));
+
+      const uploadIds = successfulUploads.map(f => f.document!.upload_id);
+      console.log('Triggering batch analysis for upload IDs:', uploadIds);
+
+      const batchResult = await documentService.triggerBatchAnalysis(ticker, uploadIds);
+      
+      console.log('Batch analysis completed:', batchResult);
+      
+      // Show successful analyses
+      if (batchResult.analyzed_documents && batchResult.analyzed_documents.length > 0) {
+        setAnalysisResults(batchResult.analyzed_documents);
+        setShowAnalysis(true);
+        
+        // Clear successfully analyzed uploads
+        setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
+      }
+      
+      // Show errors for failed analyses
+      if (batchResult.failed_analyses && batchResult.failed_analyses.length > 0) {
+        const errorMessages = batchResult.failed_analyses
+          .map(fail => `${fail.upload_id}: ${fail.error}`)
+          .join('; ');
+        setGlobalError(`Some analyses failed: ${errorMessages}`);
+      }
+      
+      if (batchResult.successful_analyses === 0) {
+        setGlobalError('All document analyses failed. Please check the documents and try again.');
+      }
+      
+    } catch (error: any) {
+      console.error('Batch analysis failed:', error);
+      setGlobalError(`Failed to analyze documents: ${error.message}`);
+      
+      // Reset upload progress on error
+      setUploadingFiles(prev => prev.map(f => 
+        f.status === 'success' ? { ...f, progress: 100 } : f
+      ));
     }
   };
 
@@ -229,8 +246,8 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
           </Typography>
           
           <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Upload financial documents to begin the two-stage analysis workflow. 
-            Documents will be automatically analyzed after upload.
+            Upload multiple documents first, then trigger batch analysis. 
+            This allows you to upload different document types and analyze them together.
           </Typography>
 
         {globalError && (
@@ -339,7 +356,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
                       uploadingFile.status === 'success' && (
                         <Chip
                           icon={<CheckCircleIcon />}
-                          label="Analysis Started"
+                          label="Upload Complete"
                           color="success"
                           size="small"
                         />
@@ -377,9 +394,19 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
                           </Typography>
                         )}
                         {uploadingFile.status === 'success' && uploadingFile.document && (
-                          <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
-                            Upload successful - Initial analysis in progress
-                          </Typography>
+                          <Box sx={{ mt: 1 }}>
+                            <Typography variant="body2" color="success.main">
+                              Upload successful - Ready for analysis
+                            </Typography>
+                            {uploadingFile.progress === 50 && (
+                              <Box sx={{ mt: 1 }}>
+                                <LinearProgress variant="indeterminate" />
+                                <Typography variant="body2" color="primary">
+                                  Analysis in progress...
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
                         )}
                       </Box>
                     }
@@ -387,6 +414,22 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
                 </ListItem>
               ))}
             </List>
+            
+            {/* Batch Analysis Button */}
+            {uploadingFiles.some(f => f.status === 'success') && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={triggerBatchAnalysis}
+                  disabled={uploadingFiles.some(f => f.progress === 50)} // Disable if analysis in progress
+                  size="large"
+                  startIcon={<AnalyticsIcon />}
+                >
+                  Analyze Uploaded Documents ({uploadingFiles.filter(f => f.status === 'success').length})
+                </Button>
+              </Box>
+            )}
           </Box>
         )}
       </CardContent>

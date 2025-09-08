@@ -213,6 +213,33 @@ class DocumentService {
     return response.data.data;
   }
 
+  // Trigger batch analysis for multiple uploaded documents
+  async triggerBatchAnalysis(
+    ticker: string, 
+    uploadIds: string[], 
+    options?: {
+      force_reanalysis?: boolean;
+    }
+  ): Promise<{
+    analyzed_documents: DocumentAnalysis[];
+    failed_analyses: Array<{ upload_id: string; error: string }>;
+    total_requested: number;
+    successful_analyses: number;
+    failed_analyses_count: number;
+  }> {
+    const response: AxiosResponse = await api.post(
+      `/companies/${ticker}/documents/analyze`,
+      {
+        upload_ids: uploadIds,
+        analysis_options: options || {}
+      },
+      {
+        timeout: 300000, // 5 minutes for batch analysis
+      }
+    );
+    return response.data.data;
+  }
+
   // Approve analysis for report generation
   async approveAnalysis(
     ticker: string,
