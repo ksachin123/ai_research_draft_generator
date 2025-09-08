@@ -49,8 +49,8 @@ PyPDF2==3.0.1
 requests==2.31.0
 python-dateutil==2.8.2
 uuid==1.30
-hashlib2==1.0.1
-logging==0.4.9.6
+tenacity==8.2.3
+werkzeug==2.3.7
 ```
 
 ### 3.2 Configuration Management
@@ -76,7 +76,15 @@ class Config:
     CHROMA_DB_PATH = os.environ.get('CHROMA_DB_PATH', './chroma_db')
     
     # File System Configuration
-    DATA_ROOT_PATH = os.environ.get('DATA_ROOT_PATH', './data')
+    # Use environment variables if set, otherwise default to project root relative paths
+    env_data_path = os.environ.get('DATA_ROOT_PATH')
+    if env_data_path:
+        DATA_ROOT_PATH = os.path.abspath(env_data_path)
+    else:
+        PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+        DATA_ROOT_PATH = os.path.join(PROJECT_ROOT, 'data')
+    
+    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(DATA_ROOT_PATH, 'uploads'))
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', './data/uploads')
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5MB
     
@@ -882,28 +890,26 @@ npm install recharts
 **File**: `frontend/package.json`
 ```json
 {
-  "name": "research-draft-generator-ui",
-  "version": "1.0.0",
+  "name": "frontend",
+  "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@emotion/react": "^11.11.1",
-    "@emotion/styled": "^11.11.0",
-    "@mui/icons-material": "^5.14.3",
-    "@mui/material": "^5.14.3",
-    "@testing-library/jest-dom": "^5.17.0",
+    "@emotion/react": "^11.13.3",
+    "@emotion/styled": "^11.13.0",
+    "@mui/icons-material": "^5.15.0",
+    "@mui/material": "^5.15.0",
+    "@testing-library/dom": "^9.3.4",
+    "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^13.4.0",
-    "@testing-library/user-event": "^13.5.0",
-    "axios": "^1.5.0",
+    "@testing-library/user-event": "^14.5.1",
+    "axios": "^1.6.2",
     "date-fns": "^2.30.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "react-hook-form": "^7.45.4",
-    "react-query": "^3.39.3",
-    "react-router-dom": "^6.15.0",
+    "react-router-dom": "^6.8.1",
     "react-scripts": "5.0.1",
-    "recharts": "^2.7.2",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^3.5.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -929,17 +935,24 @@ npm install recharts
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5000"
+  "proxy": "http://localhost:5001",
+  "devDependencies": {
+    "@types/node": "^18.19.3",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/react-router-dom": "^5.3.3",
+    "typescript": "^4.9.5"
+  }
 }
 ```
 
 ### 4.3 API Service Layer
 
-**File**: `frontend/src/services/api.js`
-```javascript
-import axios from 'axios';
+**File**: `frontend/src/services/api.ts`
+```typescript
+import axios, { AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -951,21 +964,21 @@ const api = axios.create({
 
 // Request interceptor
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     console.log(`Making ${config.method?.toUpperCase()} request to ${config.url}`);
     return config;
   },
-  (error) => {
+  (error: AxiosError) => {
     return Promise.reject(error);
   }
 );
 
 // Response interceptor
 api.interceptors.response.use(
-  (response) => {
+  (response: AxiosResponse) => {
     return response;
   },
-  (error) => {
+  (error: AxiosError) => {
     console.error('API Error:', error.response?.data || error.message);
     
     if (error.response?.status === 404) {
@@ -976,7 +989,7 @@ api.interceptors.response.use(
       });
     }
     
-    if (error.response?.status >= 500) {
+    if (error.response?.status && error.response.status >= 500) {
       // Handle server errors
       return Promise.reject({
         ...error,
@@ -993,40 +1006,117 @@ export default api;
 
 ### 4.4 Company Service
 
-**File**: `frontend/src/services/companyService.js`
-```javascript
+**File**: `frontend/src/services/companyService.ts`
+```typescript
+import { AxiosResponse } from 'axios';
 import api from './api';
+
+// Type definitions
+interface Company {
+  ticker: string;
+  company_name: string;
+  knowledge_base_status: string;
+  stats?: {
+    last_refresh?: string;
+    total_reports?: number;
+    total_chunks?: number;
+  };
+  created_at?: string;
+}
+
+interface Document {
+  filename: string;
+  file_size: number;
+  upload_date: string;
+  processing_status: string;
+}
+
+interface Report {
+  title: string;
+  report_type: string;
+  created_at: string;
+  content?: Record<string, string>;
+  metadata?: {
+    sources_used?: string;
+    generated_at?: string;
+    model_used?: string;
+  };
+}
+
+interface KnowledgeBaseStatus {
+  status: string;
+  last_refresh?: string;
+  document_count: number;
+}
+
+interface InvestmentData {
+  investment_thesis?: any;
+  investment_drivers?: any;
+  risks?: any;
+}
+
+interface UploadResult {
+  uploaded_files: Document[];
+  success: boolean;
+}
 
 export const companyService = {
   // Get all companies
-  getAllCompanies: async () => {
-    const response = await api.get('/companies');
-    return response.data;
+  getAllCompanies: async (): Promise<AxiosResponse<{ data: { companies: Company[] } }>> => {
+    return await api.get('/companies');
   },
 
   // Get company details
-  getCompanyDetails: async (ticker) => {
-    const response = await api.get(`/companies/${ticker}`);
-    return response.data;
+  getCompanyDetails: async (ticker: string): Promise<AxiosResponse<{ data: Company }>> => {
+    return await api.get(`/companies/${ticker}`);
   },
 
   // Refresh knowledge base
-  refreshKnowledgeBase: async (ticker, options = {}) => {
-    const response = await api.post(`/companies/${ticker}/knowledge-base/refresh`, options);
-    return response.data;
+  refreshKnowledgeBase: async (ticker: string, options: any = {}): Promise<AxiosResponse> => {
+    return await api.post(`/companies/${ticker}/knowledge-base/refresh`, options);
   },
 
   // Get knowledge base status
-  getKnowledgeBaseStatus: async (ticker) => {
-    const response = await api.get(`/companies/${ticker}/knowledge-base/status`);
-    return response.data;
+  getKnowledgeBaseStatus: async (ticker: string): Promise<AxiosResponse<{ data: KnowledgeBaseStatus }>> => {
+    return await api.get(`/companies/${ticker}/knowledge-base/status`);
+  },
+
+  // Upload documents
+  uploadDocuments: async (ticker: string, files: File[], documentType: string, description?: string): Promise<AxiosResponse<{ data: UploadResult }>> => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    formData.append('document_type', documentType);
+    if (description) formData.append('description', description);
+    
+    return await api.post(`/companies/${ticker}/documents/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
+  // Get uploaded documents
+  getDocuments: async (ticker: string): Promise<AxiosResponse<{ data: Document[] }>> => {
+    return await api.get(`/companies/${ticker}/documents`);
+  },
+
+  // Generate report
+  generateReport: async (ticker: string, uploadId: string, analysisType?: string, focusAreas?: string[]): Promise<AxiosResponse<{ data: Report }>> => {
+    return await api.post(`/companies/${ticker}/reports/generate`, {
+      upload_id: uploadId,
+      analysis_type: analysisType || 'general',
+      focus_areas: focusAreas,
+      include_context: true
+    });
   },
 
   // Get investment data
-  getInvestmentData: async (ticker) => {
-    const response = await api.get(`/companies/${ticker}/investment-data`);
-    return response.data;
+  getInvestmentData: async (ticker: string): Promise<AxiosResponse<{ data: InvestmentData }>> => {
+    return await api.get(`/companies/${ticker}/investment-data`);
   },
+
+  // Get generated reports
+  getReports: async (ticker: string): Promise<AxiosResponse<{ data: Report[] }>> => {
+    return await api.get(`/companies/${ticker}/reports`);
+  }
 };
 ```
 

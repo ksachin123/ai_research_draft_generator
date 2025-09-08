@@ -1,0 +1,226 @@
+# AI Research Draft Generator
+
+A comprehensive Gen AI-powered investment research platform that helps analysts author research reports in reaction to company updates like earnings transcripts, press releases, and other financial documents.
+
+## 🌟 Features
+
+- **Knowledge Base Management**: Upload and process PDF documents for 10-15 companies
+- **AI-Powered Report Generation**: Generate structured investment research reports using GPT-4o-mini
+- **Document Processing**: Automated PDF text extraction and chunking with PyPDF2
+- **Vector Search**: ChromaDB-powered similarity search for relevant context retrieval
+- **Interactive UI**: Modern React frontend with Material-UI components
+- **RESTful API**: Comprehensive Flask-based API with Swagger documentation
+
+## 🏗️ Architecture
+
+### Backend
+- **Framework**: Flask 2.3.3 with Flask-RESTX for API documentation
+- **Vector Database**: ChromaDB 0.4.15 (local deployment)
+- **Document Processing**: PyPDF2 3.0.1 for PDF text extraction
+- **AI Integration**: OpenAI GPT-4o-mini with text-embedding-ada-002
+- **Pipeline**: LangChain for RAG (Retrieval-Augmented Generation)
+
+### Frontend
+- **Framework**: React 18 with TypeScript support
+- **UI Library**: Material-UI 7.3.2
+- **HTTP Client**: Axios for API communication
+- **Routing**: React Router for navigation
+- **File Upload**: React Dropzone for drag-and-drop uploads
+
+## 📁 Project Structure
+
+```
+ai_research_draft_generator/
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py          # Flask app factory
+│   │   ├── config.py            # Configuration management
+│   │   ├── services/            # Core business logic
+│   │   │   ├── ai_service.py
+│   │   │   ├── database_service.py
+│   │   │   ├── document_service.py
+│   │   │   └── knowledge_base_service.py
+│   │   └── routes/              # API endpoints
+│   │       ├── company_routes.py
+│   │       ├── document_routes.py
+│   │       ├── knowledge_base_routes.py
+│   │       ├── report_routes.py
+│   │       └── health_routes.py
+│   ├── requirements.txt
+│   └── start.sh                 # Backend startup script
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── company/
+│   │   │   │   └── CompanyCard.jsx
+│   │   │   ├── document/
+│   │   │   │   └── DocumentUpload.jsx
+│   │   │   ├── report/
+│   │   │   │   └── ReportGeneration.jsx
+│   │   │   └── Dashboard.jsx
+│   │   ├── pages/
+│   │   │   └── CompanyDetail.jsx
+│   │   └── services/
+│   │       ├── api.js
+│   │       └── companyService.js
+│   ├── package.json
+│   └── start.sh                 # Frontend startup script
+└── data/
+    ├── documents/               # Uploaded PDF files
+    └── chromadb/               # Vector database storage
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.8+ with pip
+- Node.js 16+ with npm
+- OpenAI API key
+
+### Environment Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd ai_research_draft_generator
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   # Create .env file in backend directory
+   echo "OPENAI_API_KEY=your_openai_api_key_here" > backend/.env
+   echo "FLASK_ENV=development" >> backend/.env
+   ```
+
+### Backend Setup
+
+1. **Start the backend server**
+   ```bash
+   cd backend
+   ./start.sh
+   ```
+   
+   The script will:
+   - Create a Python virtual environment
+   - Install dependencies from requirements.txt
+   - Set up necessary directories
+   - Start Flask development server on http://localhost:5000
+
+2. **Access API Documentation**
+   - Swagger UI: http://localhost:5000/docs
+   - Health Check: http://localhost:5000/api/v1/health
+
+### Frontend Setup
+
+1. **Start the frontend development server**
+   ```bash
+   cd frontend
+   ./start.sh
+   ```
+   
+   The script will:
+   - Install npm dependencies
+   - Install additional required packages
+   - Start React development server on http://localhost:3000
+
+## 📚 API Endpoints
+
+### Company Management
+- `GET /api/v1/company/` - List all companies
+- `POST /api/v1/company/` - Add new company
+- `GET /api/v1/company/{ticker}` - Get company details
+- `DELETE /api/v1/company/{ticker}` - Remove company
+
+### Knowledge Base
+- `POST /api/v1/knowledge-base/{ticker}/refresh` - Refresh company knowledge base
+- `GET /api/v1/knowledge-base/{ticker}/stats` - Get knowledge base statistics
+
+### Document Management
+- `POST /api/v1/document/upload/{ticker}` - Upload PDF documents
+- `GET /api/v1/document/{ticker}` - List company documents
+- `DELETE /api/v1/document/{ticker}/{filename}` - Delete document
+
+### Report Generation
+- `POST /api/v1/report/generate/{ticker}` - Generate AI research report
+- `GET /api/v1/report/{ticker}` - List generated reports
+
+## 🎯 Usage Workflow
+
+1. **Add Companies**: Use the dashboard to add companies you want to track
+2. **Upload Documents**: Upload PDF reports, earnings transcripts, press releases
+3. **Build Knowledge Base**: System automatically processes and indexes documents
+4. **Generate Reports**: Create AI-powered research reports with customizable sections
+5. **Review & Download**: Review generated content and download reports
+
+## 🔧 Configuration
+
+### Backend Configuration (`backend/app/config.py`)
+```python
+OPENAI_API_KEY = "your-api-key"
+CHROMADB_PATH = "./data/chromadb"
+UPLOAD_FOLDER = "./data/documents"
+AI_MODEL = "gpt-4o-mini"
+EMBEDDING_MODEL = "text-embedding-ada-002"
+```
+
+### Frontend Configuration (`frontend/src/services/api.js`)
+```javascript
+const API_BASE_URL = 'http://localhost:5000/api/v1';
+```
+
+## 📊 Features in Detail
+
+### Document Processing
+- **PDF Upload**: Drag-and-drop interface for PDF documents
+- **Text Extraction**: PyPDF2-based text extraction with error handling
+- **Chunking**: Intelligent text chunking for optimal vector search
+- **Duplicate Detection**: Hash-based duplicate document detection
+
+### AI Report Generation
+- **Structured Sections**: Executive Summary, Investment Thesis, Risk Assessment, etc.
+- **Context-Aware**: Uses relevant document chunks for accurate analysis
+- **Customizable**: Select specific report sections and focus areas
+- **Multiple Formats**: Support for different report types (Initiation, Update, Earnings)
+
+### User Interface
+- **Responsive Design**: Works on desktop and mobile devices
+- **Material Design**: Modern, intuitive interface with Material-UI
+- **Real-time Updates**: Progress indicators for uploads and processing
+- **Error Handling**: User-friendly error messages and retry mechanisms
+
+## 🛠️ Development
+
+### Adding New Features
+
+1. **Backend**: Add new routes in `backend/app/routes/`
+2. **Frontend**: Add new components in `frontend/src/components/`
+3. **Services**: Extend business logic in `backend/app/services/`
+
+### Testing
+
+```bash
+# Backend testing
+cd backend
+python -m pytest tests/
+
+# Frontend testing
+cd frontend
+npm test
+```
+
+## 📝 License
+
+This project is licensed under the MIT License.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📞 Support
+
+For support and questions, please create an issue in the repository.
