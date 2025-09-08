@@ -756,6 +756,286 @@ class AIService:
         return sections
 ```
 
+### 3.6a Estimates Processing Service
+
+**File**: `backend/app/services/estimates_parser.py`
+```python
+"""
+SVG Financial Data Parser Service
+
+This service extracts financial data from SVG files containing balance sheets,
+cash flow statements, and income statements with analyst estimates.
+"""
+
+import os
+import re
+import json
+from typing import Dict, List, Optional, Any
+from xml.etree import ElementTree as ET
+import logging
+
+logger = logging.getLogger(__name__)
+
+class SVGFinancialParser:
+    """Parser for extracting financial data from SVG files."""
+    
+    def __init__(self):
+        self.namespace = {'svg': 'http://www.w3.org/2000/svg'}
+    
+    def parse_estimates_folder(self, ticker: str) -> Dict[str, Any]:
+        """
+        Parse all SVG files in the estimates folder for a given ticker.
+        
+        Args:
+            ticker: Stock ticker symbol
+            
+        Returns:
+            Dictionary containing parsed financial data from all statements
+        """
+        estimates_path = f"data/research/{ticker}/estimates"
+        
+        if not os.path.exists(estimates_path):
+            logger.warning(f"Estimates folder not found for {ticker}: {estimates_path}")
+            return {}
+        
+        estimates_data = {
+            'ticker': ticker,
+            'last_updated': None,
+            'balance_sheet': {},
+            'cash_flow': {},
+            'income_statement': {}
+        }
+        
+        # Parse each financial statement
+        for filename in os.listdir(estimates_path):
+            if filename.endswith('.svg'):
+                file_path = os.path.join(estimates_path, filename)
+                
+                try:
+                    if 'BalanceSheet' in filename:
+                        estimates_data['balance_sheet'] = self._parse_svg_file(file_path, 'balance_sheet')
+                    elif 'CashFlow' in filename:
+                        estimates_data['cash_flow'] = self._parse_svg_file(file_path, 'cash_flow')
+                    elif 'IncomeStatement' in filename:
+                        estimates_data['income_statement'] = self._parse_svg_file(file_path, 'income_statement')
+                        
+                    # Update last modified time
+                    file_mtime = os.path.getmtime(file_path)
+                    if not estimates_data['last_updated'] or file_mtime > estimates_data['last_updated']:
+                        estimates_data['last_updated'] = file_mtime
+                        
+                except Exception as e:
+                    logger.error(f"Error parsing {filename}: {str(e)}")
+                    continue
+        
+        return estimates_data
+    
+    def _parse_svg_file(self, file_path: str, statement_type: str) -> Dict[str, Any]:
+        """
+        Parse individual SVG file to extract financial data.
+        
+        Args:
+            file_path: Path to the SVG file
+            statement_type: Type of financial statement
+            
+        Returns:
+            Dictionary containing extracted financial data
+        """
+        try:
+            # Parse SVG XML
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            
+            # Extract all text elements
+            text_elements = self._extract_text_elements(root)
+            
+            # Parse based on statement type
+            if statement_type == 'income_statement':
+                return self._parse_income_statement(text_elements)
+            elif statement_type == 'balance_sheet':
+                return self._parse_balance_sheet(text_elements)
+            elif statement_type == 'cash_flow':
+                return self._parse_cash_flow(text_elements)
+            
+            return {}
+            
+        except Exception as e:
+            logger.error(f"Error parsing SVG file {file_path}: {str(e)}")
+            return {}
+    
+    def _extract_text_elements(self, root) -> List[Dict[str, Any]]:
+        """Extract all text elements from SVG with their positions and content."""
+        text_elements = []
+        
+        # Find all text elements
+        for text_elem in root.iter('{http://www.w3.org/2000/svg}text'):
+            # Get text content
+            tspan = text_elem.find('{http://www.w3.org/2000/svg}tspan')
+            if tspan is not None and tspan.text:
+                content = tspan.text.strip()
+                
+                # Get position from transform attribute
+                transform = text_elem.get('transform', '')
+                position = self._extract_position_from_transform(transform)
+                
+                # Get styling information
+                style = text_elem.get('style', '')
+                font_weight = 'bold' if 'font-weight:bold' in style else 'normal'
+                
+                text_elements.append({
+                    'content': content,
+                    'position': position,
+                    'font_weight': font_weight,
+                    'is_percentage': '%' in content,
+                    'is_currency': '$' in content,
+                    'is_number': self._is_numeric_value(content)
+                })
+        
+        # Sort by vertical position (y coordinate) to maintain reading order
+        text_elements.sort(key=lambda x: (-x['position']['y'], x['position']['x']))
+        
+        return text_elements
+
+    def get_comparable_metrics(self, estimates_data: Dict, document_metrics: Dict) -> Dict[str, Any]:
+        """
+        Compare document metrics against estimates data to find relevant comparisons.
+        
+        Args:
+            estimates_data: Parsed estimates data from SVG files
+            document_metrics: Metrics extracted from uploaded document
+            
+        Returns:
+            Dictionary containing comparison analysis
+        """
+        comparisons = {
+            'revenue_comparisons': [],
+            'margin_comparisons': [],
+            'segment_comparisons': [],
+            'estimate_vs_actual': [],
+            'growth_implications': []
+        }
+        
+        # Compare revenue metrics
+        if 'revenue' in document_metrics:
+            revenue_comparison = self._compare_revenue_metrics(
+                estimates_data, document_metrics['revenue']
+            )
+            if revenue_comparison:
+                comparisons['revenue_comparisons'].extend(revenue_comparison)
+        
+        # Compare margin metrics
+        if 'margins' in document_metrics:
+            margin_comparison = self._compare_margin_metrics(
+                estimates_data, document_metrics['margins']
+            )
+            if margin_comparison:
+                comparisons['margin_comparisons'].extend(margin_comparison)
+        
+        return comparisons
+
+def create_estimates_parser() -> SVGFinancialParser:
+    """Factory function to create SVG financial parser instance."""
+    return SVGFinancialParser()
+```
+
+**Integration with Knowledge Base Service**:
+```python
+# In knowledge_base_service.py, add:
+from .estimates_parser import create_estimates_parser
+
+class KnowledgeBaseService:
+    def __init__(self, config, database_service, document_service):
+        # ... existing initialization
+        self.estimates_parser = create_estimates_parser()
+    
+    def refresh_knowledge_base(self, ticker: str, force_reprocess: bool = False, 
+                              include_investment_data: bool = True, include_estimates: bool = True) -> Dict:
+        """Enhanced refresh method with estimates processing"""
+        # ... existing code
+        
+        # Process estimates data if requested
+        estimates_processed = 0
+        if include_estimates:
+            estimates_processed = self._process_estimates_data(ticker, current_state, force_reprocess)
+        
+        # ... rest of method
+    
+    def _process_estimates_data(self, ticker: str, state: Dict, force_reprocess: bool = False) -> int:
+        """Process estimates data from SVG files for a company"""
+        try:
+            logger.info(f"Processing estimates data for {ticker}")
+            
+            # Parse estimates data from SVG files
+            estimates_data = self.estimates_parser.parse_estimates_folder(ticker)
+            
+            if not estimates_data or not estimates_data.get('last_updated'):
+                logger.warning(f"No estimates data found for {ticker}")
+                return 0
+            
+            # Create embeddings for estimates data
+            embedded_docs = self._create_estimates_embeddings(ticker, estimates_data)
+            
+            # Remove old estimates data from database
+            self._remove_old_estimates_data(ticker)
+            
+            # Add new estimates data to database
+            self.db_service.add_documents(ticker, embedded_docs)
+            
+            return len(embedded_docs)
+            
+        except Exception as e:
+            logger.error(f"Failed to process estimates data for {ticker}: {str(e)}")
+            return 0
+```
+
+**Enhanced Document Processing with Comparative Analysis**:
+```python
+# In document_service.py, add comparative analysis
+class DocumentProcessingService:
+    def __init__(self, config, ai_service, knowledge_base_service=None):
+        # ... existing initialization
+        self.kb_service = knowledge_base_service
+
+    def process_uploaded_document_with_comparison(self, ticker: str, file_path: str, 
+                                                document_date: Optional[datetime] = None) -> Dict:
+        """Process uploaded document and perform comparison with estimates data"""
+        try:
+            # Process the document normally
+            embedded_chunks = self.process_pdf_report(ticker, file_path)
+            
+            # Extract full document text for analysis
+            full_text, pdf_metadata = self.extract_pdf_text(file_path)
+            
+            # Extract document date if not provided
+            if not document_date:
+                document_date = self._extract_document_date(full_text, file_path)
+            
+            # Extract financial metrics from the document
+            document_metrics = self._extract_document_metrics(full_text, document_date)
+            
+            # Get estimates data for comparison
+            comparative_analysis = {}
+            if self.kb_service:
+                estimates_data = self.kb_service.get_estimates_data(ticker)
+                if estimates_data:
+                    # Perform comparative analysis
+                    comparative_analysis = self._perform_comparative_analysis(
+                        ticker, document_metrics, estimates_data, document_date
+                    )
+            
+            return {
+                "embedded_chunks": embedded_chunks,
+                "document_metrics": document_metrics,
+                "comparative_analysis": comparative_analysis,
+                "document_date": document_date.isoformat() if document_date else None,
+                "processing_metadata": pdf_metadata
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to process document with comparison: {str(e)}")
+            raise
+```
+
 ### 3.7 Flask Routes Implementation
 
 **File**: `backend/app/routes/company_routes.py`

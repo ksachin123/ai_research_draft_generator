@@ -30,6 +30,64 @@ class AIService:
             raise
     
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+    def generate_comparative_analysis(self, new_document: str, context_documents: List[Dict],
+                                   comparative_data: Dict, analysis_type: str = "comparative") -> Dict:
+        """Generate analysis with comparative insights against estimates data"""
+        
+        # Prepare context including estimates data
+        context = self._prepare_context_with_estimates(context_documents, comparative_data)
+        
+        # Create enhanced prompt for comparative analysis
+        prompt = self._create_comparative_analysis_prompt(new_document, context, comparative_data, analysis_type)
+        
+        logger.info(f"Generating comparative analysis with estimates data")
+        
+        try:
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an expert investment research analyst specializing in comparative financial analysis. 
+                        Generate comprehensive analysis comparing actual reported metrics against analyst estimates and historical data.
+                        Focus on variance analysis, investment implications, and impact to investment thesis.
+                        Provide specific quantitative insights and actionable intelligence."""
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=3000  # Increased for comprehensive comparative analysis
+            )
+            
+            analysis_content = response.choices[0].message.content
+            
+            # Parse structured response for comparative analysis
+            structured_analysis = self._parse_comparative_analysis_response(analysis_content)
+            
+            # Add metadata
+            structured_analysis["_generation_metadata"] = {
+                "prompt_used": prompt,
+                "model": self.model,
+                "temperature": 0.3,
+                "max_tokens": 3000,
+                "analysis_type": analysis_type,
+                "context_documents_count": len(context_documents),
+                "has_estimates_comparison": bool(comparative_data.get("revenue_comparison") or 
+                                               comparative_data.get("margin_comparison") or 
+                                               comparative_data.get("segment_comparison"))
+            }
+            
+            logger.info(f"Generated comparative analysis with {len(comparative_data.get('investment_implications', []))} implications")
+            return structured_analysis
+            
+        except Exception as e:
+            logger.error(f"Failed to generate comparative analysis: {str(e)}")
+            raise
+
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
     def generate_initial_analysis(self, new_document: str, context_documents: List[Dict], 
                                 analysis_type: str = "general") -> Dict:
         """Generate initial analysis for document review (Stage 1)"""
@@ -39,8 +97,6 @@ class AIService:
         
         # Create prompt for initial analysis
         prompt = self._create_initial_analysis_prompt(new_document, context, analysis_type)
-        
-        logger.info(f"Prompt for initial analysis {prompt}")
         
         try:
             response = openai.ChatCompletion.create(
@@ -495,5 +551,207 @@ CRITICAL REQUIREMENTS:
         # Clean up list sections
         sections["key_changes"] = [item.strip() for item in sections["key_changes"] if item.strip()]
         sections["new_insights"] = [item.strip() for item in sections["new_insights"] if item.strip()]
+        
+        return sections
+    
+    def _prepare_context_with_estimates(self, context_documents: List[Dict], comparative_data: Dict) -> str:
+        """Prepare context including estimates data for comparative analysis"""
+        context_parts = []
+        
+        # Add regular document context
+        regular_context = self._prepare_context(context_documents)
+        if regular_context:
+            context_parts.append("HISTORICAL CONTEXT:")
+            context_parts.append(regular_context)
+        
+        # Add estimates comparison data
+        if comparative_data:
+            context_parts.append("\nESTIMATES AND COMPARATIVE DATA:")
+            
+            # Revenue comparisons
+            if comparative_data.get("revenue_comparison"):
+                context_parts.append("\nRevenue Analysis:")
+                for comp in comparative_data["revenue_comparison"]:
+                    context_parts.append(f"- {comp.get('metric', 'Revenue')}: {comp.get('actual', 'N/A')} (Actual)")
+                    if comp.get('variance_analysis'):
+                        context_parts.append(f"  Analysis: {comp['variance_analysis']}")
+            
+            # Margin comparisons
+            if comparative_data.get("margin_comparison"):
+                context_parts.append("\nMargin Analysis:")
+                for comp in comparative_data["margin_comparison"]:
+                    context_parts.append(f"- {comp.get('metric', 'Margin')}: {comp.get('actual', 'N/A')} (Actual)")
+                    if comp.get('estimates'):
+                        context_parts.append(f"  vs Estimates: {comp['estimates']}")
+            
+            # Segment comparisons
+            if comparative_data.get("segment_comparison"):
+                context_parts.append("\nSegment Performance:")
+                for comp in comparative_data["segment_comparison"]:
+                    context_parts.append(f"- {comp.get('segment', 'Segment')}: {comp.get('actual', 'N/A')} (Actual)")
+                    if comp.get('estimates'):
+                        context_parts.append(f"  vs Estimates: {comp['estimates']}")
+            
+            # Investment implications
+            if comparative_data.get("investment_implications"):
+                context_parts.append("\nInvestment Implications:")
+                for impl in comparative_data["investment_implications"]:
+                    context_parts.append(f"- {impl.get('category', 'General')}: {impl.get('impact', 'Unknown')} impact")
+                    context_parts.append(f"  {impl.get('description', '')}")
+                    if impl.get('investment_thesis_impact'):
+                        context_parts.append(f"  Thesis Impact: {impl['investment_thesis_impact']}")
+            
+            # Quarter context
+            if comparative_data.get("quarter_context"):
+                context_parts.append(f"\nReporting Quarter: {comparative_data['quarter_context']}")
+        
+        return "\n".join(context_parts)
+    
+    def _create_comparative_analysis_prompt(self, new_document: str, context: str, 
+                                          comparative_data: Dict, analysis_type: str) -> str:
+        """Create enhanced prompt for comparative analysis with estimates data"""
+        
+        base_prompt = f"""
+As an expert investment research analyst, analyze the following new document in the context of historical data and analyst estimates. 
+Focus particularly on comparative analysis, variance from estimates, and investment thesis implications.
+
+DOCUMENT TO ANALYZE:
+{new_document[:4000]}  # Limit to prevent token overflow
+
+HISTORICAL AND ESTIMATES CONTEXT:
+{context[:6000]}  # Extended context for comparative analysis
+
+ANALYSIS INSTRUCTIONS:
+Generate a comprehensive comparative analysis with the following structure:
+
+1. EXECUTIVE SUMMARY:
+- Brief overview of key findings and estimate variances
+- Overall assessment of company performance vs expectations
+- Critical investment implications
+
+2. ESTIMATES VS ACTUALS ANALYSIS:
+- Detailed comparison of actual metrics against analyst estimates
+- Quantify variances where possible (beat/miss and by how much)
+- Assess significance of variances and their implications
+
+3. SEGMENT PERFORMANCE COMPARISON:
+- Compare segment results against historical trends and estimates
+- Identify outperforming and underperforming segments
+- Assess impact on overall investment thesis
+
+4. MARGIN AND PROFITABILITY ANALYSIS:
+- Compare actual margins against estimates and historical performance
+- Analyze trends and sustainability of margin performance
+- Impact on profitability outlook
+
+5. INVESTMENT THESIS IMPACT:
+- How do actual results affect the investment thesis?
+- Are there changes to growth assumptions, risk profile, or valuation?
+- What are the implications for future quarters and annual performance?
+
+6. RISK ASSESSMENT UPDATE:
+- New risks identified from variance analysis
+- Changes to existing risk factors
+- Mitigation strategies and monitoring points
+
+7. ACTIONABLE INSIGHTS:
+- Specific investment recommendations based on comparative analysis
+- Key metrics to monitor in future reports
+- Catalysts and potential thesis changes
+
+CRITICAL REQUIREMENTS:
+- Quantify variances where possible with specific percentages or dollar amounts
+- Clearly distinguish between beats/misses vs estimates and their significance
+- Provide investment-grade insights with clear thesis implications
+- Reference specific data points and historical context
+- Focus on actionable intelligence for investment decision-making
+
+"""
+        
+        return base_prompt
+    
+    def _parse_comparative_analysis_response(self, analysis_content: str) -> Dict:
+        """Parse comparative analysis response into structured format"""
+        
+        sections = {
+            "executive_summary": "",
+            "estimates_vs_actuals": "",
+            "segment_comparison": "",
+            "margin_analysis": "",
+            "investment_thesis_impact": "",
+            "risk_assessment_update": "",
+            "actionable_insights": [],
+            "variance_highlights": [],
+            "investment_recommendations": []
+        }
+        
+        current_section = None
+        
+        for line in analysis_content.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Detect section headers
+            line_lower = line.lower()
+            if 'executive summary' in line_lower:
+                current_section = "executive_summary"
+                continue
+            elif 'estimates vs actual' in line_lower or 'actuals analysis' in line_lower:
+                current_section = "estimates_vs_actuals"
+                continue
+            elif 'segment' in line_lower and ('performance' in line_lower or 'comparison' in line_lower):
+                current_section = "segment_comparison"
+                continue
+            elif 'margin' in line_lower and ('profitability' in line_lower or 'analysis' in line_lower):
+                current_section = "margin_analysis"
+                continue
+            elif 'investment thesis' in line_lower and 'impact' in line_lower:
+                current_section = "investment_thesis_impact"
+                continue
+            elif 'risk assessment' in line_lower or 'risk' in line_lower and 'update' in line_lower:
+                current_section = "risk_assessment_update"
+                continue
+            elif 'actionable insights' in line_lower or 'recommendations' in line_lower:
+                current_section = "actionable_insights"
+                continue
+            
+            # Add content to current section
+            if current_section:
+                if current_section == "actionable_insights":
+                    if line.startswith('-') or line.startswith('•') or line.startswith('*'):
+                        sections["actionable_insights"].append(line[1:].strip())
+                    elif len(line) > 10:  # Substantial content
+                        sections["actionable_insights"].append(line)
+                else:
+                    # For text sections
+                    if sections[current_section]:
+                        sections[current_section] += " " + line
+                    else:
+                        sections[current_section] = line
+        
+        # Clean up sections
+        for key in sections:
+            if isinstance(sections[key], str):
+                sections[key] = sections[key].strip()
+            elif isinstance(sections[key], list):
+                sections[key] = [item.strip() for item in sections[key] if item.strip()]
+        
+        # Extract variance highlights from estimates vs actuals section
+        if sections.get("estimates_vs_actuals"):
+            variance_text = sections["estimates_vs_actuals"]
+            # Look for beat/miss language and percentages
+            variance_patterns = [
+                r'beat.*?by (\d+(?:\.\d+)?%)',
+                r'missed.*?by (\d+(?:\.\d+)?%)',
+                r'exceeded.*?by (\d+(?:\.\d+)?%)',
+                r'below.*?by (\d+(?:\.\d+)?%)'
+            ]
+            
+            import re
+            for pattern in variance_patterns:
+                matches = re.findall(pattern, variance_text, re.IGNORECASE)
+                for match in matches:
+                    sections["variance_highlights"].append(f"Variance: {match}")
         
         return sections

@@ -22,6 +22,10 @@ export interface DocumentAnalysis {
     business_segments: string[];
     strategic_developments: string[];
     forward_looking_insights: string[];
+    // New fields from API
+    actionable_insights: string[];
+    investment_implications: string;
+    margin_comparison: string[];
   };
   analysis_date: string;
   status: 'analysis_ready' | 'analysis_approved' | 'analysis_error';
@@ -35,6 +39,21 @@ export interface DocumentAnalysis {
     context_documents_count: number;
     generation_timestamp: string;
   };
+  // Enhanced analysis fields for estimates comparison
+  comparative_analysis?: {
+    executive_summary: string;
+    key_findings: string[];
+    metric_comparisons: any[];
+    estimates_analysis: string;
+    recommendations: string[];
+  };
+  comparative_data?: {
+    document_metrics: any;
+    estimates_data: any;
+    comparisons: any[];
+  };
+  document_metrics?: any;
+  has_estimates_comparison?: boolean;
 }
 
 export interface ContextSource {
@@ -56,6 +75,11 @@ export interface Document {
   analysis_date?: string;
   approval_date?: string;
   metadata: Record<string, any>;
+}
+
+export interface UploadResponse {
+  document: Document;
+  analysis?: DocumentAnalysis;
 }
 
 export interface ReportGenerationRequest {
@@ -98,7 +122,7 @@ class DocumentService {
     file: File,
     documentType: string,
     description?: string
-  ): Promise<Document> {
+  ): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('document_type', documentType);
@@ -137,7 +161,27 @@ class DocumentService {
         throw new Error('No files were uploaded successfully');
       }
 
-      return uploadedFiles[0];
+      const uploadResponse: UploadResponse = {
+        document: uploadedFiles[0]
+      };
+
+      // Check if analysis results are included in the response
+      const analysisResults = response.data.data?.analysis_results;
+      if (analysisResults && analysisResults.analysis) {
+        console.log('Analysis results included in upload response:', analysisResults);
+        uploadResponse.analysis = {
+          upload_id: analysisResults.document_info.upload_id,
+          document_info: analysisResults.document_info,
+          analysis: analysisResults.analysis,
+          analysis_date: analysisResults.analysis_date,
+          status: analysisResults.document_info.processing_status === 'analysis_ready' ? 'analysis_ready' : 'analysis_error',
+          context_sources: analysisResults.context_sources || [],
+          generation_metadata: analysisResults.generation_metadata
+        };
+        console.log('Formatted analysis data for frontend:', uploadResponse.analysis);
+      }
+
+      return uploadResponse;
       
     } catch (error: any) {
       console.error('Upload error details:', error);

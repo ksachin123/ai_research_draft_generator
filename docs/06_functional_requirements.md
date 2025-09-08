@@ -121,6 +121,69 @@ The system encompasses:
 
 **Priority**: Must Have
 
+### 3.1a Financial Estimates Processing
+
+#### FR-004a: SVG Financial Data Ingestion
+**Requirement**: The system shall process SVG files containing financial estimates data including balance sheets, cash flow statements, and income statements with analyst estimates.
+
+**Acceptance Criteria**:
+- System processes SVG files from `data/research/{TICKER}/estimates/` folder
+- System extracts financial data from SVG text elements including:
+  - Balance sheet metrics and estimates
+  - Cash flow statement data and projections  
+  - Income statement figures and analyst estimates
+  - Segment performance data (iPhone, Mac, iPad, Services, etc.)
+  - Margin data and historical trends
+- System parses both historical actual values and future estimates from SVG content
+- System creates structured embeddings for estimates data with high priority weighting
+- System maintains metadata linking estimates to specific quarters and reporting periods
+- System automatically detects and processes updates when SVG files are modified
+- System removes old estimates data before ingesting updated files
+
+**Priority**: Must Have
+
+#### FR-004b: Comparative Analysis Generation
+**Requirement**: The system shall perform comparative analysis between newly uploaded documents and existing estimates data to identify variances and investment implications.
+
+**Acceptance Criteria**:
+- System extracts financial metrics from uploaded documents including:
+  - Revenue figures by segment and total
+  - Margin data (gross, operating, net)
+  - Growth rates and year-over-year comparisons
+  - Quarterly performance indicators
+- System compares extracted document metrics against estimates database:
+  - Identifies beats/misses vs analyst estimates
+  - Calculates variance percentages where possible
+  - Matches document quarter to appropriate estimates period
+- System generates investment implications analysis:
+  - Impact on investment thesis
+  - Changes to risk profile
+  - Revision to growth assumptions
+  - Segment performance implications
+- System integrates comparative insights into AI-generated analysis
+- System provides structured variance analysis with quantified impacts
+
+**Priority**: Must Have
+
+#### FR-004c: Estimates Data Management API
+**Requirement**: The system shall provide API endpoints for managing and accessing estimates data.
+
+**Acceptance Criteria**:
+- System provides REST API endpoints:
+  - `POST /api/estimates/{ticker}/refresh` - Refresh estimates data from SVG files
+  - `GET /api/estimates/{ticker}/data` - Retrieve current estimates data
+  - `POST /api/estimates/{ticker}/compare` - Generate comparative analysis
+  - `GET /api/estimates/{ticker}/segments` - Get segment-specific estimates
+  - `GET /api/estimates/{ticker}/margins` - Get margin estimates data
+  - `GET /api/estimates/available-tickers` - List tickers with estimates data
+- API supports force refresh to reprocess unchanged files
+- API returns structured estimates data with metadata
+- API provides comparative analysis results in structured format
+- API handles error cases gracefully with appropriate HTTP status codes
+- API integrates with existing authentication and authorization systems
+
+**Priority**: Must Have
+
 ### 3.2 Document Upload and Management
 
 #### FR-006: New Document Upload

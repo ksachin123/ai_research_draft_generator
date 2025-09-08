@@ -11,6 +11,7 @@ from app.config import config
 from app.services.database_service import DatabaseService
 from app.services.ai_service import AIService
 from app.services.document_service import DocumentProcessingService
+from app.services.knowledge_base_service import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 app_config = config['default']()
 db_service = DatabaseService(app_config)
 ai_service = AIService(app_config)
-doc_service = DocumentProcessingService(app_config, ai_service)
+kb_service = KnowledgeBaseService(app_config, db_service, None)
+doc_service = DocumentProcessingService(app_config, ai_service, kb_service)
 
 # API Namespace
 document_bp = Namespace('documents', description='Document management operations')
@@ -190,13 +192,64 @@ class DocumentUpload(Resource):
                     else:
                         logger.warning("No similar documents found in knowledge base")
                     
-                    # Generate initial analysis
+                    # Generate initial analysis with comparative capabilities
                     logger.info(f"Generating initial analysis using {len(context_documents)} context documents...")
-                    initial_analysis = ai_service.generate_initial_analysis(
-                        document_content, 
-                        context_documents, 
-                        document_type
-                    )
+                    
+                    # Check if estimates data is available for comparative analysis
+                    try:
+                        estimates_data = kb_service.get_estimates_data(ticker.upper())
+                        has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
+                        logger.info(f"Estimates data available for {ticker}: {has_estimates}")
+                    except Exception as e:
+                        logger.warning(f"Failed to check estimates data: {str(e)}")
+                        has_estimates = False
+                        estimates_data = {}
+                    
+                    if has_estimates:
+                        # Use enhanced document processing with comparison
+                        logger.info("Using enhanced processing with comparative analysis")
+                        # Extract document metrics and perform comparison
+                        document_metrics = doc_service._extract_document_metrics(document_content, None)
+                        comparative_data = doc_service._perform_comparative_analysis(
+                            ticker.upper(), document_metrics, estimates_data, None
+                        )
+                        
+                        # Generate initial analysis first (core functionality)
+                        initial_analysis = ai_service.generate_initial_analysis(
+                            document_content,
+                            context_documents,
+                            document_type
+                        )
+                        
+                        # Then generate additional comparative analysis
+                        try:
+                            comparative_analysis = ai_service.generate_comparative_analysis(
+                                document_content,
+                                context_documents,
+                                comparative_data,
+                                document_type
+                            )
+                            # Merge comparative insights into the initial analysis
+                            initial_analysis["comparative_analysis"] = comparative_analysis
+                            initial_analysis["comparative_data"] = comparative_data
+                            initial_analysis["document_metrics"] = document_metrics
+                            initial_analysis["has_estimates_comparison"] = True
+                            logger.info("Enhanced analysis with comparative insights generated")
+                        except Exception as comp_error:
+                            logger.warning(f"Comparative analysis failed, using initial analysis only: {str(comp_error)}")
+                            initial_analysis["comparative_data"] = comparative_data
+                            initial_analysis["document_metrics"] = document_metrics
+                            initial_analysis["has_estimates_comparison"] = True
+                        
+                    else:
+                        # Use regular initial analysis without estimates comparison 
+                        logger.info("Using standard initial analysis without estimates comparison")
+                        initial_analysis = ai_service.generate_initial_analysis(
+                            document_content, 
+                            context_documents, 
+                            document_type
+                        )
+                        initial_analysis["has_estimates_comparison"] = False
                     logger.info("Initial analysis generated successfully")
                     logger.debug(f"Analysis structure: {list(initial_analysis.keys()) if isinstance(initial_analysis, dict) else 'Non-dict response'}")
                     
@@ -279,16 +332,38 @@ class DocumentUpload(Resource):
                 "metadata": doc_metadata
             }
             
+            # Include analysis data in response if analysis completed successfully
+            response_data = {
+                "uploaded_files": [document_info]
+            }
+            
+            if processing_status == "analysis_ready" and 'content_data' in locals() and content_data:
+                logger.info("Including complete analysis data in upload response")
+                analysis_response = {
+                    "analysis": content_data.get("analysis", {}),
+                    "analysis_date": content_data.get("analysis_date"),
+                    "generation_metadata": content_data.get("generation_metadata", {}),
+                    "context_sources": content_data.get("context_sources", []),
+                    "document_info": {
+                        "upload_id": upload_id,
+                        "filename": uploaded_file.filename,
+                        "ticker": ticker.upper(),
+                        "document_type": document_type,
+                        "processing_status": processing_status
+                    }
+                }
+                response_data["analysis_results"] = analysis_response
+                logger.info(f"Analysis data included in response with {len(analysis_response.get('context_sources', []))} context sources")
+            
+            
             logger.info(f"Document upload completed successfully: {upload_id}")
             logger.info(f"Final processing status: {processing_status}")
-            logger.info(f"Response document info: {document_info}")
+            logger.info(f"Response includes analysis data: {'analysis_results' in response_data}")
             
             return {
                 "success": True,
-                "data": {
-                    "uploaded_files": [document_info]
-                },
-                "message": "Document uploaded and ready for analysis",
+                "data": response_data,
+                "message": "Document uploaded and analysis completed" if processing_status == "analysis_ready" else "Document uploaded and ready for analysis",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
             
@@ -440,11 +515,39 @@ class DocumentAnalysis(Resource):
                         })
                 
                 # Generate new analysis with updated parameters
-                new_analysis = ai_service.generate_initial_analysis(
-                    document_content, 
-                    context_documents, 
-                    analysis_type or document_data.get("document_type", "general")
-                )
+                # Use the same enhanced logic as in upload
+                try:
+                    estimates_data = kb_service.get_estimates_data(ticker.upper())
+                    has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
+                except Exception as e:
+                    logger.warning(f"Failed to check estimates data: {str(e)}")
+                    has_estimates = False
+                    estimates_data = {}
+                
+                if has_estimates:
+                    # Use enhanced processing with comparison
+                    document_metrics = doc_service._extract_document_metrics(document_content, None)
+                    comparative_data = doc_service._perform_comparative_analysis(
+                        ticker.upper(), document_metrics, estimates_data, None
+                    )
+                    
+                    new_analysis = ai_service.generate_comparative_analysis(
+                        document_content,
+                        context_documents,
+                        comparative_data,
+                        analysis_type or document_data.get("document_type", "general")
+                    )
+                    
+                    new_analysis["comparative_data"] = comparative_data
+                    new_analysis["document_metrics"] = document_metrics
+                    new_analysis["has_estimates_comparison"] = True
+                else:
+                    new_analysis = ai_service.generate_report_draft(
+                        document_content, 
+                        context_documents, 
+                        analysis_type or document_data.get("document_type", "general")
+                    )
+                    new_analysis["has_estimates_comparison"] = False
                 
                 # Update document data
                 document_data["analysis"] = new_analysis

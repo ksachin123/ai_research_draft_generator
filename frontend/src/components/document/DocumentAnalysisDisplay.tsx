@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Card,
   CardContent,
@@ -26,7 +27,8 @@ import {
   ExpandMore,
   ExpandLess,
   Code,
-  Settings
+  Settings,
+  Warning
 } from '@mui/icons-material';
 import { DocumentAnalysis } from '../../services/documentService';
 
@@ -75,6 +77,58 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
+
+  // Component to render markdown content with proper styling
+  const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => (
+    <ReactMarkdown
+      components={{
+        // Override default components for better styling
+        p: ({ children }) => <Typography variant="body1" paragraph>{children}</Typography>,
+        h1: ({ children }) => <Typography variant="h4" gutterBottom>{children}</Typography>,
+        h2: ({ children }) => <Typography variant="h5" gutterBottom>{children}</Typography>,
+        h3: ({ children }) => <Typography variant="h6" gutterBottom>{children}</Typography>,
+        ul: ({ children }) => <List dense>{children}</List>,
+        ol: ({ children }) => <List dense>{children}</List>,
+        li: ({ children }) => (
+          <ListItem disablePadding>
+            <ListItemText primary={children} sx={{ ml: 1 }} />
+          </ListItem>
+        ),
+        strong: ({ children }) => <Typography component="span" fontWeight="bold">{children}</Typography>,
+        em: ({ children }) => <Typography component="span" fontStyle="italic">{children}</Typography>,
+        code: ({ children }) => (
+          <Typography 
+            component="code" 
+            sx={{ 
+              bgcolor: 'grey.100', 
+              px: 0.5, 
+              py: 0.25, 
+              borderRadius: 0.5, 
+              fontFamily: 'monospace',
+              fontSize: '0.9em'
+            }}
+          >
+            {children}
+          </Typography>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+
+  // Component to render markdown arrays (like key_changes, new_insights)
+  const MarkdownArrayRenderer: React.FC<{ items: string[] }> = ({ items }) => (
+    <List dense>
+      {items.map((item, index) => (
+        <ListItem key={index} disablePadding>
+          <Box sx={{ ml: 1, width: '100%' }}>
+            <MarkdownRenderer content={item} />
+          </Box>
+        </ListItem>
+      ))}
+    </List>
+  );
 
   return (
     <Card elevation={3} sx={{ maxWidth: '100%', mb: 3 }}>
@@ -147,9 +201,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   <Insights sx={{ verticalAlign: 'middle', mr: 1 }} />
                   Executive Summary
                 </Typography>
-                <Typography variant="body1" paragraph>
-                  {analysis.analysis.executive_summary}
-                </Typography>
+                <MarkdownRenderer content={analysis.analysis.executive_summary} />
               </Paper>
             )}
 
@@ -160,16 +212,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   <Timeline sx={{ verticalAlign: 'middle', mr: 1 }} />
                   Key Changes
                 </Typography>
-                <List dense>
-                  {analysis.analysis.key_changes.map((change, index) => (
-                    <ListItem key={index} disablePadding>
-                      <ListItemText 
-                        primary={`• ${change}`}
-                        sx={{ ml: 1 }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
+                <MarkdownArrayRenderer items={analysis.analysis.key_changes} />
               </Paper>
             )}
 
@@ -180,16 +223,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   <TrendingUp sx={{ verticalAlign: 'middle', mr: 1 }} />
                   New Insights
                 </Typography>
-                <List dense>
-                  {analysis.analysis.new_insights.map((insight, index) => (
-                    <ListItem key={index} disablePadding>
-                      <ListItemText 
-                        primary={`• ${insight}`}
-                        sx={{ ml: 1 }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
+                <MarkdownArrayRenderer items={analysis.analysis.new_insights} />
               </Paper>
             )}
 
@@ -199,10 +233,178 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                 <Typography variant="h6" gutterBottom>
                   Investment Thesis Impact
                 </Typography>
-                <Typography variant="body1" paragraph>
-                  {analysis.analysis.potential_thesis_impact}
-                </Typography>
+                <MarkdownRenderer content={analysis.analysis.potential_thesis_impact} />
               </Paper>
+            )}
+
+            {/* Business Segments */}
+            {analysis.analysis.business_segments && analysis.analysis.business_segments.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <TrendingUp sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Business Segments
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.business_segments} />
+              </Paper>
+            )}
+
+            {/* Actionable Insights */}
+            {analysis.analysis.actionable_insights && analysis.analysis.actionable_insights.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <Insights sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Actionable Insights
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.actionable_insights} />
+              </Paper>
+            )}
+
+            {/* Investment Implications */}
+            {analysis.analysis.investment_implications && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <TrendingUp sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Investment Implications
+                </Typography>
+                <MarkdownRenderer content={analysis.analysis.investment_implications} />
+              </Paper>
+            )}
+
+            {/* Margin Comparison */}
+            {analysis.analysis.margin_comparison && analysis.analysis.margin_comparison.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <Timeline sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Margin Comparison
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.margin_comparison} />
+              </Paper>
+            )}
+
+            {/* Financial Performance */}
+            {analysis.analysis.financial_performance && analysis.analysis.financial_performance.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <Timeline sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Financial Performance
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.financial_performance} />
+              </Paper>
+            )}
+
+            {/* Forward Looking Insights */}
+            {analysis.analysis.forward_looking_insights && analysis.analysis.forward_looking_insights.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <TrendingUp sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Forward Looking Insights
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.forward_looking_insights} />
+              </Paper>
+            )}
+
+            {/* Requires Attention */}
+            {analysis.analysis.requires_attention && analysis.analysis.requires_attention.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2, bgcolor: 'warning.light' }}>
+                <Typography variant="h6" gutterBottom>
+                  <Warning sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Requires Attention
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.requires_attention} />
+              </Paper>
+            )}
+
+            {/* Strategic Development */}
+            {analysis.analysis.strategic_developments && analysis.analysis.strategic_developments.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <Description sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Strategic Development
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.strategic_developments} />
+              </Paper>
+            )}
+
+            {/* Comparative Analysis Section */}
+            {analysis.has_estimates_comparison && analysis.comparative_analysis && (
+              <Paper sx={{ p: 2, mb: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+                <Typography variant="h6" gutterBottom>
+                  <Insights sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Estimates Comparison Analysis
+                </Typography>
+                
+                {/* Comparative Executive Summary */}
+                {analysis.comparative_analysis.executive_summary && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Summary
+                    </Typography>
+                    <MarkdownRenderer content={analysis.comparative_analysis.executive_summary} />
+                  </Box>
+                )}
+
+                {/* Key Findings */}
+                {analysis.comparative_analysis.key_findings && analysis.comparative_analysis.key_findings.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Key Findings
+                    </Typography>
+                    <MarkdownArrayRenderer items={analysis.comparative_analysis.key_findings} />
+                  </Box>
+                )}
+
+                {/* Estimates Analysis */}
+                {analysis.comparative_analysis.estimates_analysis && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Estimates Analysis
+                    </Typography>
+                    <MarkdownRenderer content={analysis.comparative_analysis.estimates_analysis} />
+                  </Box>
+                )}
+
+                {/* Metric Comparisons */}
+                {analysis.comparative_analysis.metric_comparisons && analysis.comparative_analysis.metric_comparisons.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Metric Comparisons
+                    </Typography>
+                    <List dense>
+                      {analysis.comparative_analysis.metric_comparisons.map((comparison, index) => (
+                        <ListItem key={index} disablePadding>
+                          <Box sx={{ ml: 1, width: '100%' }}>
+                            <Typography variant="body2" fontWeight="bold">
+                              {comparison.metric || comparison}
+                            </Typography>
+                            {comparison.analysis && (
+                              <MarkdownRenderer content={comparison.analysis} />
+                            )}
+                          </Box>
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Box>
+                )}
+
+                {/* Recommendations */}
+                {analysis.comparative_analysis.recommendations && analysis.comparative_analysis.recommendations.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Recommendations
+                    </Typography>
+                    <MarkdownArrayRenderer items={analysis.comparative_analysis.recommendations} />
+                  </Box>
+                )}
+              </Paper>
+            )}
+
+            {/* Estimates Comparison Indicator */}
+            {analysis.has_estimates_comparison && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                <Typography>
+                  ✓ This analysis includes comparison with estimates data from the knowledge base
+                </Typography>
+              </Alert>
             )}
           </Box>
         )}

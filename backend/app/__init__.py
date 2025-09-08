@@ -32,12 +32,14 @@ def create_app(config_name=None):
     from app.routes.document_routes import document_bp
     from app.routes.report_routes import report_bp
     from app.routes.health_routes import health_bp
+    from app.routes.estimates_routes import estimates_bp
     
     api.add_namespace(company_bp, path='/api/companies')
     api.add_namespace(knowledge_base_bp, path='/api')
     api.add_namespace(document_bp, path='/api')
     api.add_namespace(report_bp, path='/api')
     api.add_namespace(health_bp, path='/api')
+    app.register_blueprint(estimates_bp)  # Standard Flask blueprint
     
     # Configure Logging
     configure_logging(app)

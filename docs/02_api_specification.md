@@ -436,9 +436,301 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 - `404`: Company not found
 - `500`: Server error
 
-## 6. System Health APIs
+## 6. Financial Estimates APIs
 
-### 6.1 Health Check
+### 6.1 Refresh Estimates Data
+**Endpoint**: `POST /api/estimates/{ticker}/refresh`
+
+**Description**: Refresh estimates data from SVG files for a specific company.
+
+**Parameters**:
+- `ticker` (path): Company ticker symbol (e.g., "AAPL")
+
+**Request Body**:
+```json
+{
+  "force_reprocess": false
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "ticker": "AAPL",
+  "result": {
+    "status": "completed",
+    "reports_processed": 5,
+    "investment_data_processed": 3,
+    "estimates_processed": 12,
+    "total_documents": 20
+  },
+  "message": "Successfully refreshed estimates data for AAPL"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `400`: Invalid request
+- `404`: Ticker not found
+- `500`: Server error
+
+### 6.2 Get Estimates Data
+**Endpoint**: `GET /api/estimates/{ticker}/data`
+
+**Description**: Retrieve current estimates data for a company.
+
+**Parameters**:
+- `ticker` (path): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "ticker": "AAPL",
+  "data": {
+    "ticker": "AAPL",
+    "last_updated": "2025-09-07T15:30:00Z",
+    "financial_statements": {
+      "income_statement": {
+        "segment_data": {
+          "iPhone": {
+            "actuals": [
+              {"value": "25.0%", "position": {"x": 451.97, "y": 546.7}},
+              {"value": "26.0%", "position": {"x": 491.69, "y": 546.7}}
+            ],
+            "estimates": [
+              {"value": "27.5%", "position": {"x": 571.15, "y": 546.7}}
+            ]
+          },
+          "Mac": {
+            "actuals": [
+              {"value": "32.0%", "position": {"x": 173.9, "y": 537.58}}
+            ],
+            "estimates": [
+              {"value": "30.0%", "position": {"x": 293.06, "y": 537.58}}
+            ]
+          }
+        },
+        "margins": {
+          "gross_margin": {
+            "actuals": [
+              {"value": "36%", "position": {"x": 180.5, "y": 181.85}}
+            ],
+            "estimates": [
+              {"value": "35%", "position": {"x": 498.29, "y": 181.85}}
+            ]
+          }
+        },
+        "quarterly_data": [],
+        "estimates": {}
+      },
+      "balance_sheet": {
+        "segment_data": {},
+        "margins": {},
+        "quarterly_data": [],
+        "estimates": {}
+      },
+      "cash_flow": {
+        "segment_data": {},
+        "margins": {},
+        "quarterly_data": [],
+        "estimates": {}
+      }
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Estimates data not found
+- `500`: Server error
+
+### 6.3 Generate Comparative Analysis
+**Endpoint**: `POST /api/estimates/{ticker}/compare`
+
+**Description**: Generate comparative analysis between uploaded document and estimates data.
+
+**Parameters**:
+- `ticker` (path): Company ticker symbol (e.g., "AAPL")
+
+**Request Body**:
+```json
+{
+  "document_text": "Apple reported iPhone revenue of $43.8 billion for the quarter...",
+  "document_date": "2025-07-31T00:00:00Z",
+  "analysis_type": "comparative"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "ticker": "AAPL",
+  "analysis": {
+    "executive_summary": "iPhone revenue of $43.8B exceeded estimates by 2.3%, driven by strong Services growth...",
+    "estimates_vs_actuals": "Revenue beat consensus by $1.1B with particularly strong iPhone performance...",
+    "segment_comparison": "iPhone segment outperformed with 8.2% YoY growth vs 5.5% estimated...",
+    "margin_analysis": "Gross margin of 46.2% matched estimates, showing consistent profitability trends...",
+    "investment_thesis_impact": "Strong iPhone performance validates premium pricing strategy and market position...",
+    "risk_assessment_update": "Supply chain risks remain monitored; margin sustainability confirmed...",
+    "actionable_insights": [
+      "Monitor iPhone ASP trends in upcoming quarters",
+      "Services growth trajectory supports recurring revenue thesis",
+      "Margin expansion opportunities in emerging markets"
+    ],
+    "variance_highlights": [
+      "Variance: 2.3%"
+    ]
+  },
+  "comparative_data": {
+    "revenue_comparison": [
+      {
+        "metric": "Total Revenue",
+        "actual": "$43.8 billion",
+        "variance_analysis": "Beat estimates by $1.1B (2.6%)",
+        "significance": "high"
+      }
+    ],
+    "margin_comparison": [
+      {
+        "metric": "Gross Margin",
+        "actual": "46.2%",
+        "estimates": {"actuals": [{"value": "45.8%"}]},
+        "variance": "40 bps beat",
+        "significance": "medium"
+      }
+    ],
+    "segment_comparison": [
+      {
+        "segment": "iPhone",
+        "actual": "$43.8 billion",
+        "estimates": {"actuals": [{"value": "$42.7B"}]},
+        "variance": "$1.1B beat",
+        "significance": "high"
+      }
+    ],
+    "investment_implications": [
+      {
+        "category": "Revenue Performance",
+        "impact": "Positive",
+        "description": "Strong iPhone performance validates premium positioning",
+        "investment_thesis_impact": "Supports sustainable growth narrative"
+      }
+    ],
+    "quarter_context": "Q3 2025"
+  },
+  "document_metrics": {
+    "revenue": {
+      "iphone_revenue_billion": {
+        "value": 43800000000,
+        "raw_text": "$43.8 billion"
+      }
+    },
+    "margins": {},
+    "segments": {
+      "iPhone revenue": {
+        "value": 43800000000,
+        "raw_text": "$43.8 billion"
+      }
+    },
+    "growth_rates": {},
+    "key_figures": {},
+    "document_quarter": "Q3 2025"
+  },
+  "context_documents_count": 10
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `400`: Invalid request body
+- `404`: Ticker not found
+- `500`: Server error
+
+### 6.4 Get Segment Estimates
+**Endpoint**: `GET /api/estimates/{ticker}/segments`
+
+**Description**: Retrieve segment-specific estimates data for a company.
+
+**Parameters**:
+- `ticker` (path): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "ticker": "AAPL",
+  "segments": {
+    "iPhone": {
+      "income_statement": {
+        "actuals": [
+          {"value": "25.0%", "position": {"x": 451.97, "y": 546.7}}
+        ],
+        "estimates": [
+          {"value": "27.5%", "position": {"x": 571.15, "y": 546.7}}
+        ]
+      }
+    },
+    "Mac": {
+      "income_statement": {
+        "actuals": [
+          {"value": "32.0%", "position": {"x": 173.9, "y": 537.58}}
+        ],
+        "estimates": [
+          {"value": "30.0%", "position": {"x": 293.06, "y": 537.58}}
+        ]
+      }
+    },
+    "Services": {
+      "income_statement": {
+        "actuals": [],
+        "estimates": []
+      }
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Estimates data not found
+- `500`: Server error
+
+### 6.5 Get Available Tickers
+**Endpoint**: `GET /api/estimates/available-tickers`
+
+**Description**: Retrieve list of tickers that have estimates data available.
+
+**Response**:
+```json
+{
+  "success": true,
+  "tickers": [
+    {
+      "ticker": "AAPL",
+      "estimates_files": ["BalanceSheet.svg", "CashFlow.svg", "IncomeStatement.svg"],
+      "last_updated": 1725716400.0
+    },
+    {
+      "ticker": "MSFT", 
+      "estimates_files": ["BalanceSheet.svg", "IncomeStatement.svg"],
+      "last_updated": 1725630000.0
+    }
+  ],
+  "count": 2
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `500`: Server error
+
+## 7. System Health APIs
+
+### 7.1 Health Check
 **Endpoint**: `GET /api/health`
 
 **Description**: Check system health and dependencies.
@@ -464,7 +756,7 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 - `200`: Healthy
 - `503`: Unhealthy
 
-## 7. Error Codes Reference
+## 8. Error Codes Reference
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
@@ -478,7 +770,7 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 | `DATABASE_ERROR` | 500 | Chroma database error |
 | `INSUFFICIENT_DATA` | 400 | Insufficient knowledge base data |
 
-## 8. Rate Limits & Constraints
+## 9. Rate Limits & Constraints
 
 - **File Upload**: Max 5MB per file
 - **Concurrent Processing**: Max 3 knowledge base refreshes

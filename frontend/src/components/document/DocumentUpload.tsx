@@ -29,7 +29,7 @@ import {
   Refresh as RefreshIcon,
   AttachFile as AttachFileIcon
 } from '@mui/icons-material';
-import { documentService, Document, DocumentAnalysis } from '../../services/documentService';
+import { documentService, Document, DocumentAnalysis, UploadResponse } from '../../services/documentService';
 import DocumentAnalysisDisplay from './DocumentAnalysisDisplay';
 
 interface DocumentUploadProps {
@@ -85,6 +85,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
 
     // Upload files sequentially to avoid overwhelming the server
     const results: Document[] = [];
+    const analyses: DocumentAnalysis[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -95,7 +96,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
           f.file === file ? { ...f, progress: 25 } : f
         ));
 
-        const uploadedDocument = await documentService.uploadDocument(
+        const uploadResponse: UploadResponse = await documentService.uploadDocument(
           ticker,
           file,
           selectedDocumentType,
@@ -108,11 +109,17 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
             ...f, 
             progress: 100, 
             status: 'success', 
-            document: uploadedDocument 
+            document: uploadResponse.document 
           } : f
         ));
 
-        results.push(uploadedDocument);
+        results.push(uploadResponse.document);
+
+        // If analysis is included in upload response, add it to analyses
+        if (uploadResponse.analysis) {
+          console.log('Analysis included in upload response for:', file.name);
+          analyses.push(uploadResponse.analysis);
+        }
 
       } catch (error: any) {
         console.error(`Failed to upload ${file.name}:`, error);
@@ -133,21 +140,24 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
       onUploadComplete(results);
     }
 
-    // Fetch analysis results for successful uploads
-    if (results.length > 0) {
+    // Show analysis results if available
+    if (analyses.length > 0) {
+      console.log('Displaying analysis results from upload response:', analyses);
+      setAnalysisResults(analyses);
+      setShowAnalysis(true);
+    } else if (results.length > 0) {
+      // Fallback: Fetch analysis results for successful uploads if not included in response
       try {
         console.log('Fetching analysis results for uploaded documents...');
         const analysisPromises = results.map(doc => 
           documentService.getAnalysis(ticker, doc.upload_id)
         );
-        const analyses = await Promise.all(analysisPromises);
+        const fetchedAnalyses = await Promise.all(analysisPromises);
         
-        console.log('Analysis results fetched successfully:', analyses);
-        setAnalysisResults(analyses);
+        console.log('Analysis results fetched successfully:', fetchedAnalyses);
+        setAnalysisResults(fetchedAnalyses);
         setShowAnalysis(true);
         
-        // Don't clear successful uploads immediately - keep them visible
-        // until user closes the analysis view
       } catch (error: any) {
         console.error('Failed to fetch analysis results:', error);
         // Still clear uploads after delay even if analysis fetch fails

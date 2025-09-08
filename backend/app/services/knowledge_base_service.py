@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional
 import logging
+from .estimates_parser import create_estimates_parser
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +13,10 @@ class KnowledgeBaseService:
         self.config = config
         self.db_service = database_service
         self.doc_service = document_service
+        self.estimates_parser = create_estimates_parser(config)
     
     def refresh_knowledge_base(self, ticker: str, force_reprocess: bool = False, 
-                              include_investment_data: bool = True) -> Dict:
+                              include_investment_data: bool = True, include_estimates: bool = True) -> Dict:
         """Refresh knowledge base for a company"""
         try:
             logger.info(f"Starting knowledge base refresh for {ticker}")
@@ -25,7 +27,8 @@ class KnowledgeBaseService:
                 "processed_files": {
                     "past_reports": [],
                     "investment_data": [],
-                    "uploaded_documents": []
+                    "uploaded_documents": [],
+                    "estimates_data": []
                 },
                 "statistics": {
                     "total_chunks": 0,
@@ -40,6 +43,11 @@ class KnowledgeBaseService:
             investment_processed = 0
             if include_investment_data:
                 investment_processed = self._process_investment_data(ticker, current_state)
+                
+            # Process estimates data if requested
+            estimates_processed = 0
+            if include_estimates:
+                estimates_processed = self._process_estimates_data(ticker, current_state, force_reprocess)
             
             # Update statistics
             stats = self.db_service.get_company_stats(ticker)
@@ -52,6 +60,7 @@ class KnowledgeBaseService:
                 "status": "completed",
                 "reports_processed": reports_processed,
                 "investment_data_processed": investment_processed,
+                "estimates_processed": estimates_processed,
                 "total_documents": stats.get("total_documents", 0)
             }
             
@@ -63,7 +72,7 @@ class KnowledgeBaseService:
             return {}
     
     def get_knowledge_base_content(self, ticker: str, page: int = 1, page_size: int = 20, 
-                                 document_type: str = None, search_query: str = None) -> Dict:
+                                 document_type: Optional[str] = None, search_query: Optional[str] = None) -> Dict:
         """Get knowledge base content with pagination and filtering"""
         try:
             return self.db_service.get_knowledge_base_content(
@@ -407,3 +416,171 @@ class KnowledgeBaseService:
             base_priority += 0.1
         
         return min(base_priority, 1.0)
+    
+    def _process_estimates_data(self, ticker: str, state: Dict, force_reprocess: bool = False) -> int:
+        """Process estimates data from SVG files for a company"""
+        try:
+            logger.info(f"Processing estimates data for {ticker}")
+            
+            # Parse estimates data from SVG files
+            estimates_data = self.estimates_parser.parse_estimates_folder(ticker)
+            
+            if not estimates_data or not estimates_data.get('last_updated'):
+                logger.warning(f"No estimates data found for {ticker}")
+                return 0
+            
+            # Check if already processed and up-to-date
+            processed_estimates = state["processed_files"].get("estimates_data", [])
+            if not force_reprocess and processed_estimates:
+                last_processed = processed_estimates[0].get("last_updated")
+                if last_processed and float(last_processed) >= estimates_data['last_updated']:
+                    logger.debug(f"Estimates data already up-to-date for {ticker}")
+                    return 0
+            
+            # Create embeddings for estimates data
+            embedded_docs = self._create_estimates_embeddings(ticker, estimates_data)
+            
+            # Remove old estimates data from database
+            self._remove_old_estimates_data(ticker)
+            
+            # Add new estimates data to database
+            self.db_service.add_documents(ticker, embedded_docs)
+            
+            # Update processing state
+            estimates_info = {
+                "data_type": "estimates",
+                "last_updated": estimates_data['last_updated'],
+                "processed_date": datetime.utcnow().timestamp(),
+                "chunk_count": len(embedded_docs),
+                "status": "completed"
+            }
+            
+            state["processed_files"]["estimates_data"] = [estimates_info]
+            
+            logger.info(f"Successfully processed estimates data for {ticker}: {len(embedded_docs)} chunks")
+            return len(embedded_docs)
+            
+        except Exception as e:
+            logger.error(f"Failed to process estimates data for {ticker}: {str(e)}")
+            return 0
+    
+    def _create_estimates_embeddings(self, ticker: str, estimates_data: Dict) -> List[Dict]:
+        """Create embeddings for estimates data"""
+        embedded_docs = []
+        
+        # Process each financial statement
+        for statement_type in ['income_statement', 'balance_sheet', 'cash_flow']:
+            statement_data = estimates_data.get(statement_type, {})
+            if not statement_data:
+                continue
+                
+            # Create comprehensive text representation of the data
+            content_parts = []
+            content_parts.append(f"Financial Estimates Data - {statement_type.replace('_', ' ').title()}")
+            content_parts.append(f"Company: {ticker}")
+            content_parts.append(f"Last Updated: {datetime.fromtimestamp(estimates_data.get('last_updated', 0)).strftime('%Y-%m-%d')}")
+            
+            # Add segment data
+            if 'segment_data' in statement_data:
+                content_parts.append("\nSegment Performance Data:")
+                for segment, data in statement_data['segment_data'].items():
+                    content_parts.append(f"- {segment}:")
+                    if 'actuals' in data:
+                        content_parts.append(f"  Historical: {', '.join([item['value'] for item in data['actuals']])}")
+                    if 'estimates' in data:
+                        content_parts.append(f"  Estimates: {', '.join([item['value'] for item in data['estimates']])}")
+            
+            # Add margins data
+            if 'margins' in statement_data:
+                content_parts.append("\nMargin Data:")
+                for margin_type, data in statement_data['margins'].items():
+                    content_parts.append(f"- {margin_type.replace('_', ' ').title()}:")
+                    if 'actuals' in data:
+                        content_parts.append(f"  Historical: {', '.join([item['value'] for item in data['actuals']])}")
+                    if 'estimates' in data:
+                        content_parts.append(f"  Estimates: {', '.join([item['value'] for item in data['estimates']])}")
+            
+            # Add quarterly data if available
+            if 'quarterly_data' in statement_data and statement_data['quarterly_data']:
+                content_parts.append(f"\nQuarterly Data: {len(statement_data['quarterly_data'])} quarters available")
+            
+            content = "\n".join(content_parts)
+            
+            # Create embedding document
+            doc = {
+                "content": content,
+                "metadata": {
+                    "document_type": "estimates_data",
+                    "statement_type": statement_type,
+                    "company_ticker": ticker.upper(),
+                    "data_source": "estimates_svg",
+                    "last_updated": estimates_data.get('last_updated'),
+                    "processed_date": datetime.utcnow().isoformat() + "Z",
+                    "priority": 0.9  # High priority for estimates data
+                }
+            }
+            
+            embedded_docs.append(doc)
+            
+            # Create separate documents for major segments if they have substantial data
+            if 'segment_data' in statement_data:
+                for segment, data in statement_data['segment_data'].items():
+                    if data.get('actuals') or data.get('estimates'):
+                        segment_content = f"Segment Analysis - {segment}\n"
+                        segment_content += f"Company: {ticker}\n"
+                        segment_content += f"Statement Type: {statement_type.replace('_', ' ').title()}\n\n"
+                        
+                        if data.get('actuals'):
+                            segment_content += f"Historical Performance: {', '.join([item['value'] for item in data['actuals']])}\n"
+                        
+                        if data.get('estimates'):
+                            segment_content += f"Analyst Estimates: {', '.join([item['value'] for item in data['estimates']])}\n"
+                        
+                        segment_doc = {
+                            "content": segment_content,
+                            "metadata": {
+                                "document_type": "segment_estimates",
+                                "segment_name": segment,
+                                "statement_type": statement_type,
+                                "company_ticker": ticker.upper(),
+                                "data_source": "estimates_svg",
+                                "last_updated": estimates_data.get('last_updated'),
+                                "processed_date": datetime.utcnow().isoformat() + "Z",
+                                "priority": 0.8
+                            }
+                        }
+                        
+                        embedded_docs.append(segment_doc)
+        
+        return embedded_docs
+    
+    def _remove_old_estimates_data(self, ticker: str):
+        """Remove old estimates data from the database"""
+        try:
+            collection = self.db_service.get_collection(ticker)
+            
+            # Get all documents
+            all_docs = collection.get()
+            
+            # Find documents with estimates data
+            ids_to_delete = []
+            for i, metadata in enumerate(all_docs["metadatas"]):
+                if metadata.get("document_type") in ["estimates_data", "segment_estimates"]:
+                    ids_to_delete.append(all_docs["ids"][i])
+            
+            # Delete old estimates documents
+            if ids_to_delete:
+                collection.delete(ids=ids_to_delete)
+                logger.info(f"Removed {len(ids_to_delete)} old estimates documents for {ticker}")
+                
+        except Exception as e:
+            logger.error(f"Failed to remove old estimates data for {ticker}: {str(e)}")
+    
+    def get_estimates_data(self, ticker: str) -> Dict:
+        """Get estimates data for a company"""
+        try:
+            estimates_data = self.estimates_parser.parse_estimates_folder(ticker)
+            return estimates_data
+        except Exception as e:
+            logger.error(f"Failed to get estimates data for {ticker}: {str(e)}")
+            return {}
