@@ -142,14 +142,14 @@ class ReportGenerate(Resource):
                             "distance": 1.0 - source.get("relevance_score", 0.5)
                         })
             elif include_context:
-                # Fallback: Generate new similarity search if context sources not available
+                # Enhanced context retrieval for comprehensive report generation
                 doc_embedding = ai_service.generate_embedding(document_text[:2000])
                 
-                results = db_service.query_similar_documents(
+                results = db_service.query_historical_financial_data(
                     ticker.upper(),
                     doc_embedding,
-                    n_results=5,
-                    where_filter={"document_type": {"$in": ["past_report", "investment_data"]}}
+                    n_results=15,  # Comprehensive context for detailed reports
+                    prefer_recent=True
                 )
                 
                 if results["documents"]:

@@ -165,15 +165,15 @@ class DocumentUpload(Resource):
                     doc_embedding = ai_service.generate_embedding(doc_text_for_embedding)
                     logger.info(f"Document embedding generated successfully. Vector dimension: {len(doc_embedding)}")
                     
-                    # Search for similar documents with priority for historical financial data
-                    logger.debug(f"Searching for similar documents with financial data priority for ticker: {ticker.upper()}")
+                    # Search for similar documents with enhanced context retrieval
+                    logger.debug(f"Searching for comprehensive context documents with enhanced retrieval for ticker: {ticker.upper()}")
                     results = db_service.query_historical_financial_data(
                         ticker.upper(),
                         doc_embedding,
-                        n_results=8,  # Get more results since we're prioritizing
+                        n_results=15,  # Increased for comprehensive context
                         prefer_recent=True
                     )
-                    logger.info(f"Enhanced knowledge base search completed. Found {len(results.get('documents', [[]])[0]) if results.get('documents') else 0} similar documents with financial data priority")
+                    logger.info(f"Enhanced knowledge base search completed. Found {len(results.get('documents', [[]])[0]) if results.get('documents') else 0} comprehensive context documents with financial data priority")
                     
                     context_documents = []
                     if results["documents"]:
@@ -200,11 +200,27 @@ class DocumentUpload(Resource):
                     logger.info("Initial analysis generated successfully")
                     logger.debug(f"Analysis structure: {list(initial_analysis.keys()) if isinstance(initial_analysis, dict) else 'Non-dict response'}")
                     
-                    # Update content data with analysis
+                    # Extract generation metadata (including prompt) from the analysis
+                    generation_metadata = initial_analysis.pop("_generation_metadata", {})
+                    
+                    # Update content data with analysis and generation details
                     logger.debug("Updating content data with analysis results...")
                     content_data["analysis"] = initial_analysis
                     content_data["analysis_date"] = datetime.utcnow().isoformat() + "Z"
                     content_data["status"] = "analysis_ready"
+                    
+                    # Store generation metadata including the prompt for review purposes
+                    content_data["generation_metadata"] = {
+                        "prompt_used": generation_metadata.get("prompt_used", ""),
+                        "model": generation_metadata.get("model", ""),
+                        "temperature": generation_metadata.get("temperature", 0.3),
+                        "max_tokens": generation_metadata.get("max_tokens", 2500),
+                        "analysis_type": generation_metadata.get("analysis_type", "general"),
+                        "context_documents_count": generation_metadata.get("context_documents_count", 0),
+                        "generation_timestamp": datetime.utcnow().isoformat() + "Z"
+                    }
+                    logger.info("Added generation metadata including prompt to content data for review purposes")
+                    
                     content_data["context_sources"] = [
                         {
                             "type": "knowledge_base",
@@ -349,7 +365,8 @@ class DocumentAnalysis(Resource):
                 "analysis": document_data.get("analysis", {}),
                 "analysis_date": document_data.get("analysis_date"),
                 "status": document_data.get("status"),
-                "context_sources": document_data.get("context_sources", [])
+                "context_sources": document_data.get("context_sources", []),
+                "generation_metadata": document_data.get("generation_metadata", {})
             }
             
             return {

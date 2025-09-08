@@ -5,9 +5,9 @@
 The AI Research Draft Generator exposes RESTful APIs for knowledge base management and report generation. All APIs return JSON responses and use standard HTTP status codes.
 
 ### 1.1 Base Configuration
-- **Base URL**: `http://localhost:5000/api`
+- **Base URL**: `http://localhost:5001/api`
 - **Content-Type**: `application/json`
-- **Documentation**: `http://localhost:5000/swagger` (Swagger UI)
+- **Documentation**: `http://localhost:5001/swagger` (Swagger UI)
 
 ### 1.2 Standard Response Format
 ```json

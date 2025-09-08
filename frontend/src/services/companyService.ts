@@ -45,6 +45,51 @@ interface InvestmentData {
   risks?: any;
 }
 
+interface KnowledgeBaseDocument {
+  id: string;
+  content: string;
+  content_preview: string;
+  metadata: {
+    document_type: string;
+    source_file: string;
+    processed_date?: string;
+    report_date?: string;
+    page_number?: number;
+    chunk_index?: number;
+    contains_analyst_estimates: boolean;
+    historical_financial_data: boolean;
+    content_priority: number;
+  };
+}
+
+interface KnowledgeBaseContentResponse {
+  success: boolean;
+  data: {
+    ticker: string;
+    documents: KnowledgeBaseDocument[];
+    pagination: {
+      page: number;
+      page_size: number;
+      total_items: number;
+      total_pages: number;
+      has_next: boolean;
+      has_prev: boolean;
+    };
+    filters: {
+      document_type?: string;
+      search_query?: string;
+    };
+  };
+}
+
+interface KnowledgeBaseDocumentTypesResponse {
+  success: boolean;
+  data: {
+    ticker: string;
+    document_types: string[];
+  };
+}
+
 interface UploadResult {
   uploaded_files: Document[];
   success: boolean;
@@ -126,6 +171,41 @@ export const companyService = {
     return response.data;
   },
 
+  // Get knowledge base content with pagination and filtering
+  getKnowledgeBaseContent: async (
+    ticker: string, 
+    page: number = 1, 
+    pageSize: number = 20,
+    documentType?: string,
+    searchQuery?: string
+  ): Promise<KnowledgeBaseContentResponse> => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    
+    if (documentType) {
+      params.append('document_type', documentType);
+    }
+    
+    if (searchQuery) {
+      params.append('search', searchQuery);
+    }
+    
+    const response = await api.get<KnowledgeBaseContentResponse>(
+      `/companies/${ticker}/knowledge-base/content?${params}`
+    );
+    return response.data;
+  },
+
+  // Get knowledge base document types
+  getKnowledgeBaseDocumentTypes: async (ticker: string): Promise<KnowledgeBaseDocumentTypesResponse> => {
+    const response = await api.get<KnowledgeBaseDocumentTypesResponse>(
+      `/companies/${ticker}/knowledge-base/document-types`
+    );
+    return response.data;
+  },
+
   // Get investment data
   getInvestmentData: async (ticker: string): Promise<InvestmentData> => {
     const response = await api.get<InvestmentData>(`/companies/${ticker}/investment-data`);
@@ -160,3 +240,5 @@ export const companyService = {
     return response.data;
   },
 };
+
+export default companyService;

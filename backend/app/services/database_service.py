@@ -87,18 +87,18 @@ class DatabaseService:
             raise
     
     def query_historical_financial_data(self, ticker: str, query_embedding: List[float], 
-                                      n_results: int = 10, prefer_recent: bool = True) -> Dict:
-        """Query with priority for historical financial data and analyst estimates"""
+                                      n_results: int = 15, prefer_recent: bool = True) -> Dict:
+        """Query with priority for historical financial data and analyst estimates - Enhanced for comprehensive context"""
         try:
             collection = self.get_collection(ticker)
             
-            # First, try to get recent analyst estimates and financial metrics
-            priority_results = None
+            # Step 1: Get recent financial documents with analyst estimates (priority)
+            financial_results = None
             if prefer_recent:
                 try:
-                    priority_results = collection.query(
+                    financial_results = collection.query(
                         query_embeddings=[query_embedding],
-                        n_results=min(n_results // 2, 5),
+                        n_results=8,  # Increased from 5 to get more financial context
                         where={
                             "$and": [
                                 {"is_historical": True},
@@ -109,50 +109,75 @@ class DatabaseService:
                             ]
                         }
                     )
-                except:
-                    priority_results = None
+                    logger.debug(f"Retrieved {len(financial_results['ids'][0])} financial documents with estimates")
+                except Exception as e:
+                    logger.debug(f"Failed to query financial documents: {str(e)}")
+                    financial_results = None
             
-            # Get general similar documents
+            # Step 2: Get recent general documents (investment data, etc.)
+            recent_results = None
+            try:
+                recent_results = collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=8,
+                    where={
+                        "$and": [
+                            {"document_type": {"$in": ["past_report", "investment_data"]}},
+                            {"report_date": {"$gte": "2024-01-01"}}  # Recent reports
+                        ]
+                    }
+                )
+                logger.debug(f"Retrieved {len(recent_results['ids'][0])} recent investment documents")
+            except Exception as e:
+                logger.debug(f"Failed to query recent documents: {str(e)}")
+                recent_results = None
+            
+            # Step 3: Get general similar documents as fallback
             general_results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
-                where_document=None
+                include=["documents", "metadatas", "distances"]
             )
             
-            # Merge results, prioritizing historical financial data
-            if priority_results and priority_results["ids"][0]:
-                # Combine and deduplicate
-                combined_ids = priority_results["ids"][0] + general_results["ids"][0]
-                combined_distances = priority_results["distances"][0] + general_results["distances"][0]
-                combined_metadatas = priority_results["metadatas"][0] + general_results["metadatas"][0]
-                combined_documents = priority_results["documents"][0] + general_results["documents"][0]
-                
-                # Remove duplicates while preserving priority order
-                seen_ids = set()
-                final_ids, final_distances, final_metadatas, final_documents = [], [], [], []
-                
-                for i, doc_id in enumerate(combined_ids):
-                    if doc_id not in seen_ids:
+            # Step 4: Intelligently merge results, prioritizing comprehensive context
+            combined_ids, combined_distances, combined_metadatas, combined_documents = [], [], [], []
+            seen_ids = set()
+            
+            # Priority order: Financial documents > Recent reports > General similar
+            result_sets = []
+            if financial_results and financial_results["ids"][0]:
+                result_sets.append(("financial", financial_results))
+            if recent_results and recent_results["ids"][0]:
+                result_sets.append(("recent", recent_results))
+            result_sets.append(("general", general_results))
+            
+            # Combine results in priority order
+            for result_type, results in result_sets:
+                for i in range(len(results["ids"][0])):
+                    doc_id = results["ids"][0][i]
+                    if doc_id not in seen_ids and len(combined_ids) < n_results:
                         seen_ids.add(doc_id)
-                        final_ids.append(doc_id)
-                        final_distances.append(combined_distances[i])
-                        final_metadatas.append(combined_metadatas[i])
-                        final_documents.append(combined_documents[i])
+                        combined_ids.append(doc_id)
+                        combined_distances.append(results["distances"][0][i])
+                        combined_metadatas.append(results["metadatas"][0][i])
+                        combined_documents.append(results["documents"][0][i])
+                        logger.debug(f"Added {result_type} doc: {results['metadatas'][0][i].get('file_name', 'Unknown')}")
                         
-                        if len(final_ids) >= n_results:
+                        if len(combined_ids) >= n_results:
                             break
                 
-                results = {
-                    "ids": [final_ids],
-                    "distances": [final_distances],
-                    "metadatas": [final_metadatas],
-                    "documents": [final_documents]
-                }
-            else:
-                results = general_results
+                if len(combined_ids) >= n_results:
+                    break
             
-            logger.debug(f"Retrieved {len(results['ids'][0])} documents with financial data priority for {ticker}")
-            return results
+            final_results = {
+                "ids": [combined_ids],
+                "distances": [combined_distances],
+                "metadatas": [combined_metadatas],
+                "documents": [combined_documents]
+            }
+            
+            logger.info(f"Enhanced context retrieval: Retrieved {len(combined_ids)} comprehensive context documents for {ticker}")
+            return final_results
             
         except Exception as e:
             logger.error(f"Failed to query historical financial data for {ticker}: {str(e)}")
@@ -256,3 +281,130 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to get companies list: {str(e)}")
             return []
+    
+    def get_knowledge_base_content(self, ticker: str, page: int = 1, page_size: int = 50, 
+                                 document_type: str = None, search_query: str = None) -> Dict:
+        """Get knowledge base content with pagination and filtering"""
+        try:
+            collection = self.get_collection(ticker)
+            
+            # Build where filter
+            where_filter = {}
+            if document_type:
+                where_filter["document_type"] = document_type
+            
+            # Calculate offset
+            offset = (page - 1) * page_size
+            
+            if search_query:
+                # If there's a search query, use ChromaDB's text search capability
+                # First get all documents that match the filter, then search within them
+                if where_filter:
+                    all_matching = collection.get(where=where_filter)
+                    if not all_matching["ids"]:
+                        return {
+                            "documents": [],
+                            "pagination": {
+                                "page": page,
+                                "page_size": page_size,
+                                "total_items": 0,
+                                "total_pages": 0,
+                                "has_next": False,
+                                "has_prev": page > 1
+                            }
+                        }
+                else:
+                    all_matching = collection.get()
+                
+                # Filter documents that contain the search query (case-insensitive)
+                search_lower = search_query.lower()
+                filtered_documents = []
+                filtered_metadatas = []
+                filtered_ids = []
+                
+                for i, doc in enumerate(all_matching["documents"]):
+                    if search_lower in doc.lower():
+                        filtered_documents.append(doc)
+                        filtered_metadatas.append(all_matching["metadatas"][i])
+                        filtered_ids.append(all_matching["ids"][i])
+                
+                # Apply pagination
+                paginated_documents = filtered_documents[offset:offset + page_size]
+                paginated_metadatas = filtered_metadatas[offset:offset + page_size]
+                paginated_ids = filtered_ids[offset:offset + page_size]
+                
+                total_items = len(filtered_documents)
+            else:
+                # No search query, just get all documents with filter
+                try:
+                    # Get total count first
+                    if where_filter:
+                        all_docs = collection.get(where=where_filter)
+                    else:
+                        all_docs = collection.get()
+                    
+                    total_items = len(all_docs["ids"])
+                    
+                    # Apply pagination
+                    paginated_ids = all_docs["ids"][offset:offset + page_size]
+                    paginated_documents = all_docs["documents"][offset:offset + page_size]
+                    paginated_metadatas = all_docs["metadatas"][offset:offset + page_size]
+                    
+                except Exception as e:
+                    logger.error(f"Error getting documents for {ticker}: {str(e)}")
+                    return {
+                        "documents": [],
+                        "pagination": {
+                            "page": page,
+                            "page_size": page_size,
+                            "total_items": 0,
+                            "total_pages": 0,
+                            "has_next": False,
+                            "has_prev": page > 1
+                        }
+                    }
+            
+            # Format documents
+            formatted_documents = []
+            for i, doc_id in enumerate(paginated_ids):
+                metadata = paginated_metadatas[i]
+                document_text = paginated_documents[i]
+                
+                formatted_doc = {
+                    "id": doc_id,
+                    "content": document_text,
+                    "content_preview": document_text[:300] + "..." if len(document_text) > 300 else document_text,
+                    "metadata": {
+                        "document_type": metadata.get("document_type", "unknown"),
+                        "source_file": metadata.get("source_file", "unknown"),
+                        "processed_date": metadata.get("processed_date"),
+                        "report_date": metadata.get("report_date"),
+                        "page_number": metadata.get("page_number"),
+                        "chunk_index": metadata.get("chunk_index"),
+                        "contains_analyst_estimates": metadata.get("contains_analyst_estimates", False),
+                        "historical_financial_data": metadata.get("historical_financial_data", False),
+                        "content_priority": metadata.get("content_priority", 0.0)
+                    }
+                }
+                formatted_documents.append(formatted_doc)
+            
+            # Calculate pagination info
+            total_pages = (total_items + page_size - 1) // page_size
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "documents": formatted_documents,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total_items,
+                    "total_pages": total_pages,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base content for {ticker}: {str(e)}")
+            raise

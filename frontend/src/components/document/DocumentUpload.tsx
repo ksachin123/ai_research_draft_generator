@@ -175,6 +175,28 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
     setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
   };
 
+  const handleApproveAnalysis = async (uploadId: string) => {
+    try {
+      const approvalData = {
+        modifications: {},
+        notes: 'Analysis approved via UI'
+      };
+
+      await documentService.approveAnalysis(ticker, uploadId, approvalData);
+      
+      // Refresh the analysis to show updated status
+      const updatedAnalysis = await documentService.getAnalysis(ticker, uploadId);
+      setAnalysisResults(prev => 
+        prev.map(analysis => 
+          analysis.upload_id === uploadId ? updatedAnalysis : analysis
+        )
+      );
+    } catch (error: any) {
+      console.error('Failed to approve analysis:', error);
+      setGlobalError(`Failed to approve analysis: ${error.message}`);
+    }
+  };
+
   const removeUploadingFile = (index: number) => {
     setUploadingFiles(prev => prev.filter((_, idx) => idx !== index));
   };
@@ -367,7 +389,9 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
           <DocumentAnalysisDisplay
             key={analysis.upload_id}
             analysis={analysis}
+            ticker={ticker}
             onClose={analysisResults.length === 1 ? handleCloseAnalysis : undefined}
+            onApprove={handleApproveAnalysis}
           />
         ))}
         {analysisResults.length > 1 && (

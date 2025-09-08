@@ -119,3 +119,94 @@ class KnowledgeBaseStatus(Resource):
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }, 500
+
+@knowledge_base_bp.route('/companies/<string:ticker>/knowledge-base/content')
+class KnowledgeBaseContent(Resource):
+    @knowledge_base_bp.marshal_with(api_response_model)
+    def get(self, ticker):
+        """Get knowledge base content for a company with pagination and filtering"""
+        try:
+            # Parse query parameters
+            page = int(request.args.get('page', 1))
+            page_size = min(int(request.args.get('page_size', 20)), 100)  # Limit max page size
+            document_type = request.args.get('document_type')
+            search_query = request.args.get('search')
+            
+            logger.info(f"Getting knowledge base content for {ticker} - page: {page}, size: {page_size}")
+            
+            # Get content from database service
+            content_data = db_service.get_knowledge_base_content(
+                ticker.upper(), 
+                page=page, 
+                page_size=page_size,
+                document_type=document_type,
+                search_query=search_query
+            )
+            
+            return {
+                "success": True,
+                "data": {
+                    "ticker": ticker.upper(),
+                    "documents": content_data["documents"],
+                    "pagination": content_data["pagination"],
+                    "filters": {
+                        "document_type": document_type,
+                        "search_query": search_query
+                    }
+                },
+                "message": f"Knowledge base content for {ticker.upper()} retrieved successfully",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": {
+                    "code": "INVALID_PARAMETERS",
+                    "message": "Invalid query parameters",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 400
+            
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base content for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR",
+                    "message": f"Failed to retrieve knowledge base content for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+@knowledge_base_bp.route('/companies/<string:ticker>/knowledge-base/document-types')
+class KnowledgeBaseDocumentTypes(Resource):
+    @knowledge_base_bp.marshal_with(api_response_model)
+    def get(self, ticker):
+        """Get available document types in the knowledge base"""
+        try:
+            document_types = kb_service.get_knowledge_base_document_types(ticker.upper())
+            
+            return {
+                "success": True,
+                "data": {
+                    "ticker": ticker.upper(),
+                    "document_types": document_types
+                },
+                "message": f"Document types for {ticker.upper()} retrieved successfully",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get document types for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR",
+                    "message": f"Failed to retrieve document types for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500

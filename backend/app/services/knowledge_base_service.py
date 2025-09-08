@@ -59,8 +59,36 @@ class KnowledgeBaseService:
             return result
             
         except Exception as e:
-            logger.error(f"Failed to refresh knowledge base for {ticker}: {str(e)}")
+            logger.error(f"Failed to get investment summary for {ticker}: {str(e)}")
+            return {}
+    
+    def get_knowledge_base_content(self, ticker: str, page: int = 1, page_size: int = 20, 
+                                 document_type: str = None, search_query: str = None) -> Dict:
+        """Get knowledge base content with pagination and filtering"""
+        try:
+            return self.db_service.get_knowledge_base_content(
+                ticker, page, page_size, document_type, search_query
+            )
+        except Exception as e:
+            logger.error(f"Failed to get knowledge base content for {ticker}: {str(e)}")
             raise
+    
+    def get_knowledge_base_document_types(self, ticker: str) -> List[str]:
+        """Get available document types in the knowledge base"""
+        try:
+            collection = self.db_service.get_collection(ticker)
+            all_docs = collection.get()
+            
+            document_types = set()
+            for metadata in all_docs["metadatas"]:
+                doc_type = metadata.get("document_type")
+                if doc_type:
+                    document_types.add(doc_type)
+            
+            return sorted(list(document_types))
+        except Exception as e:
+            logger.error(f"Failed to get document types for {ticker}: {str(e)}")
+            return []
     
     def _process_past_reports(self, ticker: str, state: Dict, force_reprocess: bool) -> int:
         """Process past reports for a company with enhanced table extraction and date parsing"""

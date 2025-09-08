@@ -26,6 +26,15 @@ export interface DocumentAnalysis {
   analysis_date: string;
   status: 'analysis_ready' | 'analysis_approved' | 'analysis_error';
   context_sources: ContextSource[];
+  generation_metadata?: {
+    prompt_used: string;
+    model: string;
+    temperature: number;
+    max_tokens: number;
+    analysis_type: string;
+    context_documents_count: number;
+    generation_timestamp: string;
+  };
 }
 
 export interface ContextSource {

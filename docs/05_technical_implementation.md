@@ -1146,7 +1146,7 @@ if __name__ == '__main__':
     app = create_app()
     app.run(
         host='0.0.0.0',
-        port=int(os.environ.get('PORT', 5000)),
+        port=int(os.environ.get('PORT', 5001)),
         debug=app.config['DEBUG']
     )
 ```
@@ -1196,7 +1196,7 @@ npm start
 
 4. **Access Application**:
    - Frontend: http://localhost:3000
-   - API Swagger: http://localhost:5000/swagger
+   - API Swagger: http://localhost:5001/swagger
 
 ## 6. Testing Strategy
 

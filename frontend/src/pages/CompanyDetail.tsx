@@ -20,11 +20,13 @@ import {
   Assessment as ReportsIcon,
   CloudUpload as UploadIcon,
   AutoAwesome as GenerateIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Storage as KnowledgeBaseIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import DocumentUpload from '../components/document/DocumentUpload';
 import ReportGeneration from '../components/report/ReportGeneration';
+import KnowledgeBaseContent from '../components/KnowledgeBaseContent';
 import { companyService } from '../services/companyService';
 import { Document as UploadedDocument } from '../services/documentService';
 
@@ -276,6 +278,11 @@ const CompanyDetail: React.FC = () => {
                 label="View Reports" 
                 iconPosition="start"
               />
+              <Tab 
+                icon={<KnowledgeBaseIcon />} 
+                label="Knowledge Base" 
+                iconPosition="start"
+              />
             </Tabs>
           </Box>
 
@@ -375,6 +382,10 @@ const CompanyDetail: React.FC = () => {
                   </>
                 )}
               </Box>
+            )}
+
+            {activeTab === 3 && (
+              <KnowledgeBaseContent ticker={ticker!} />
             )}
           </CardContent>
         </Card>

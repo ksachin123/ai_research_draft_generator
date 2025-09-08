@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -11,26 +11,54 @@ import {
   ListItemText,
   Divider,
   Alert,
-  Button
+  Button,
+  Collapse,
+  IconButton,
+  Grid,
+  CircularProgress
 } from '@mui/material';
 import {
   CheckCircle,
   TrendingUp,
   Insights,
   Description,
-  Timeline
+  Timeline,
+  ExpandMore,
+  ExpandLess,
+  Code,
+  Settings
 } from '@mui/icons-material';
 import { DocumentAnalysis } from '../../services/documentService';
 
 interface DocumentAnalysisDisplayProps {
   analysis: DocumentAnalysis;
   onClose?: () => void;
+  onApprove?: (uploadId: string) => void;
+  ticker: string;
 }
 
 const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({ 
   analysis, 
-  onClose 
+  onClose,
+  onApprove,
+  ticker 
 }) => {
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [approving, setApproving] = useState(false);
+
+  const handleApprove = async () => {
+    if (onApprove && analysis.upload_id) {
+      setApproving(true);
+      try {
+        await onApprove(analysis.upload_id);
+      } catch (error) {
+        console.error('Failed to approve analysis:', error);
+      } finally {
+        setApproving(false);
+      }
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'analysis_ready':
@@ -58,11 +86,24 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
               Document Analysis Results
             </Typography>
           </Box>
-          {onClose && (
-            <Button onClick={onClose} variant="outlined" size="small">
-              Close
-            </Button>
-          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {analysis.status === 'analysis_ready' && onApprove && (
+              <Button 
+                onClick={handleApprove} 
+                variant="contained" 
+                size="small"
+                disabled={approving}
+                color="primary"
+              >
+                {approving ? 'Approving...' : 'Approve Analysis'}
+              </Button>
+            )}
+            {onClose && (
+              <Button onClick={onClose} variant="outlined" size="small">
+                Close
+              </Button>
+            )}
+          </Box>
         </Box>
 
         {/* Document Info */}
@@ -164,6 +205,89 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
               </Paper>
             )}
           </Box>
+        )}
+
+        {/* Generation Metadata */}
+        {analysis.generation_metadata && (
+          <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+              <Typography variant="h6">
+                <Settings sx={{ verticalAlign: 'middle', mr: 1 }} />
+                Analysis Generation Details
+              </Typography>
+              <IconButton 
+                onClick={() => setShowPrompt(!showPrompt)}
+                size="small"
+                sx={{ ml: 1 }}
+              >
+                {showPrompt ? <ExpandLess /> : <ExpandMore />}
+                <Typography variant="body2" sx={{ ml: 0.5 }}>
+                  {showPrompt ? 'Hide' : 'Show'} Prompt
+                </Typography>
+              </IconButton>
+            </Box>
+            
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Model</Typography>
+                <Typography variant="body1">{analysis.generation_metadata.model}</Typography>
+              </Grid>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Analysis Type</Typography>
+                <Typography variant="body1">{analysis.generation_metadata.analysis_type}</Typography>
+              </Grid>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Context Documents</Typography>
+                <Typography variant="body1">{analysis.generation_metadata.context_documents_count}</Typography>
+              </Grid>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Temperature</Typography>
+                <Typography variant="body1">{analysis.generation_metadata.temperature}</Typography>
+              </Grid>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Max Tokens</Typography>
+                <Typography variant="body1">{analysis.generation_metadata.max_tokens}</Typography>
+              </Grid>
+              <Grid item xs={6} sm={4}>
+                <Typography variant="body2" color="textSecondary">Generated</Typography>
+                <Typography variant="body1">
+                  {formatDate(analysis.generation_metadata.generation_timestamp)}
+                </Typography>
+              </Grid>
+            </Grid>
+
+            <Collapse in={showPrompt}>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  <Code sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Prompt Used for Analysis Generation
+                </Typography>
+                <Paper 
+                  sx={{ 
+                    p: 2, 
+                    bgcolor: 'grey.100', 
+                    maxHeight: 400, 
+                    overflow: 'auto',
+                    border: '1px solid',
+                    borderColor: 'grey.300'
+                  }}
+                >
+                  <Typography 
+                    variant="body2" 
+                    component="pre" 
+                    sx={{ 
+                      whiteSpace: 'pre-wrap',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8rem',
+                      margin: 0
+                    }}
+                  >
+                    {analysis.generation_metadata.prompt_used}
+                  </Typography>
+                </Paper>
+              </Box>
+            </Collapse>
+          </Paper>
         )}
 
         {/* Context Sources */}

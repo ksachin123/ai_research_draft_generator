@@ -105,11 +105,11 @@ ai_research_draft_generator/
    - Create a Python virtual environment
    - Install dependencies from requirements.txt
    - Set up necessary directories
-   - Start Flask development server on http://localhost:5000
+   - Start Flask development server on http://localhost:5001
 
 2. **Access API Documentation**
-   - Swagger UI: http://localhost:5000/docs
-   - Health Check: http://localhost:5000/api/v1/health
+   - Swagger UI: http://localhost:5001/swagger
+   - Health Check: http://localhost:5001/api/health
 
 ### Frontend Setup
 
@@ -164,9 +164,9 @@ AI_MODEL = "gpt-4o-mini"
 EMBEDDING_MODEL = "text-embedding-ada-002"
 ```
 
-### Frontend Configuration (`frontend/src/services/api.js`)
-```javascript
-const API_BASE_URL = 'http://localhost:5000/api/v1';
+### Frontend Configuration (`frontend/src/services/api.ts`)
+```typescript
+const API_BASE_URL = 'http://localhost:5001/api';
 ```
 
 ## 📊 Features in Detail
