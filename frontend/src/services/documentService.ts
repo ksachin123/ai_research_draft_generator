@@ -26,7 +26,24 @@ export interface DocumentAnalysis {
     actionable_insights: string[];
     investment_implications: string;
     margin_comparison: string[];
+    // Enhanced analysis fields for estimates comparison
+    comparative_analysis?: {
+      executive_summary?: string;
+      key_findings?: string[];
+      metric_comparisons?: any[];
+      estimates_analysis?: string;
+      recommendations?: string[];
+      // New actual API response structure
+      estimates_vs_actuals?: string;
+      segment_comparison?: string;
+      margin_analysis?: string;
+      investment_thesis_impact?: string;
+      risk_assessment_update?: string;
+      actionable_insights?: string[];
+      variance_highlights?: string[];
+    };
   };
+  has_estimates_comparison?: boolean;
   analysis_date: string;
   status: 'analysis_ready' | 'analysis_approved' | 'analysis_error';
   context_sources: ContextSource[];
@@ -39,21 +56,12 @@ export interface DocumentAnalysis {
     context_documents_count: number;
     generation_timestamp: string;
   };
-  // Enhanced analysis fields for estimates comparison
-  comparative_analysis?: {
-    executive_summary: string;
-    key_findings: string[];
-    metric_comparisons: any[];
-    estimates_analysis: string;
-    recommendations: string[];
-  };
   comparative_data?: {
     document_metrics: any;
     estimates_data: any;
     comparisons: any[];
   };
   document_metrics?: any;
-  has_estimates_comparison?: boolean;
 }
 
 export interface ContextSource {

@@ -48,6 +48,21 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
   const [showPrompt, setShowPrompt] = useState(false);
   const [approving, setApproving] = useState(false);
 
+  // Helper function to check if comparative analysis data is available
+  const hasComparativeAnalysis = () => {
+    const comp = analysis.analysis.comparative_analysis;
+    return comp && (
+      comp.estimates_vs_actuals ||
+      comp.segment_comparison ||
+      comp.margin_analysis ||
+      comp.investment_thesis_impact ||
+      comp.risk_assessment_update ||
+      (comp.actionable_insights && comp.actionable_insights.length > 0) ||
+      (comp.variance_highlights && comp.variance_highlights.length > 0) ||
+      (comp.key_findings && comp.key_findings.length > 0)
+    );
+  };
+
   const handleApprove = async () => {
     if (onApprove && analysis.upload_id) {
       setApproving(true);
@@ -326,51 +341,131 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
             )}
 
             {/* Comparative Analysis Section */}
-            {analysis.has_estimates_comparison && analysis.comparative_analysis && (
-              <Paper sx={{ p: 2, mb: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+            {hasComparativeAnalysis() && (
+              <Paper sx={{ p: 2, mb: 2, bgcolor: 'background.paper' }}>
                 <Typography variant="h6" gutterBottom>
                   <Insights sx={{ verticalAlign: 'middle', mr: 1 }} />
                   Estimates Comparison Analysis
                 </Typography>
                 
                 {/* Comparative Executive Summary */}
-                {analysis.comparative_analysis.executive_summary && (
+                {analysis.analysis?.comparative_analysis?.executive_summary && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle1" gutterBottom>
-                      Summary
+                      Executive Summary
                     </Typography>
-                    <MarkdownRenderer content={analysis.comparative_analysis.executive_summary} />
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.executive_summary} />
                   </Box>
                 )}
 
+                {/* Estimates vs Actuals */}
+                {analysis.analysis?.comparative_analysis?.estimates_vs_actuals && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Estimates vs Actuals
+                    </Typography>
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.estimates_vs_actuals} />
+                  </Box>
+                )}
+
+                {/* Always show this section if comparative_analysis exists */}
+                {!analysis.analysis?.comparative_analysis?.estimates_vs_actuals && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                      Estimates vs Actuals: No data available
+                    </Typography>
+                  </Box>
+                )}
+
+                {/* Segment Comparison */}
+                {analysis.analysis?.comparative_analysis?.segment_comparison && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Segment Comparison
+                    </Typography>
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.segment_comparison} />
+                  </Box>
+                )}
+
+                {/* Margin Analysis */}
+                {analysis.analysis?.comparative_analysis?.margin_analysis && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Margin Analysis
+                    </Typography>
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.margin_analysis} />
+                  </Box>
+                )}
+
+                {/* Investment Thesis Impact */}
+                {analysis.analysis?.comparative_analysis?.investment_thesis_impact && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Investment Thesis Impact
+                    </Typography>
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.investment_thesis_impact} />
+                  </Box>
+                )}
+
+                {/* Risk Assessment Update */}
+                {analysis.analysis?.comparative_analysis?.risk_assessment_update && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Risk Assessment Update
+                    </Typography>
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.risk_assessment_update} />
+                  </Box>
+                )}
+
+                {/* Actionable Insights */}
+                {analysis.analysis?.comparative_analysis?.actionable_insights && analysis.analysis.comparative_analysis.actionable_insights.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Actionable Insights
+                    </Typography>
+                    <MarkdownArrayRenderer items={analysis.analysis.comparative_analysis.actionable_insights} />
+                  </Box>
+                )}
+
+                {/* Variance Highlights */}
+                {analysis.analysis?.comparative_analysis?.variance_highlights && analysis.analysis.comparative_analysis.variance_highlights.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Variance Highlights
+                    </Typography>
+                    <MarkdownArrayRenderer items={analysis.analysis.comparative_analysis.variance_highlights} />
+                  </Box>
+                )}
+
+                {/* Legacy support for old structure */}
                 {/* Key Findings */}
-                {analysis.comparative_analysis.key_findings && analysis.comparative_analysis.key_findings.length > 0 && (
+                {analysis.analysis?.comparative_analysis?.key_findings && analysis.analysis.comparative_analysis.key_findings.length > 0 && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle1" gutterBottom>
                       Key Findings
                     </Typography>
-                    <MarkdownArrayRenderer items={analysis.comparative_analysis.key_findings} />
+                    <MarkdownArrayRenderer items={analysis.analysis.comparative_analysis.key_findings} />
                   </Box>
                 )}
 
-                {/* Estimates Analysis */}
-                {analysis.comparative_analysis.estimates_analysis && (
+                {/* Legacy Estimates Analysis */}
+                {analysis.analysis?.comparative_analysis?.estimates_analysis && !analysis.analysis.comparative_analysis.estimates_vs_actuals && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle1" gutterBottom>
                       Estimates Analysis
                     </Typography>
-                    <MarkdownRenderer content={analysis.comparative_analysis.estimates_analysis} />
+                    <MarkdownRenderer content={analysis.analysis.comparative_analysis.estimates_analysis} />
                   </Box>
                 )}
 
-                {/* Metric Comparisons */}
-                {analysis.comparative_analysis.metric_comparisons && analysis.comparative_analysis.metric_comparisons.length > 0 && (
+                {/* Legacy Metric Comparisons */}
+                {analysis.analysis?.comparative_analysis?.metric_comparisons && analysis.analysis.comparative_analysis.metric_comparisons.length > 0 && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle1" gutterBottom>
                       Metric Comparisons
                     </Typography>
                     <List dense>
-                      {analysis.comparative_analysis.metric_comparisons.map((comparison, index) => (
+                      {analysis.analysis.comparative_analysis.metric_comparisons.map((comparison, index) => (
                         <ListItem key={index} disablePadding>
                           <Box sx={{ ml: 1, width: '100%' }}>
                             <Typography variant="body2" fontWeight="bold">
@@ -386,20 +481,20 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   </Box>
                 )}
 
-                {/* Recommendations */}
-                {analysis.comparative_analysis.recommendations && analysis.comparative_analysis.recommendations.length > 0 && (
+                {/* Legacy Recommendations */}
+                {analysis.analysis?.comparative_analysis?.recommendations && analysis.analysis.comparative_analysis.recommendations.length > 0 && !analysis.analysis.comparative_analysis.actionable_insights && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="subtitle1" gutterBottom>
                       Recommendations
                     </Typography>
-                    <MarkdownArrayRenderer items={analysis.comparative_analysis.recommendations} />
+                    <MarkdownArrayRenderer items={analysis.analysis.comparative_analysis.recommendations} />
                   </Box>
                 )}
               </Paper>
             )}
 
             {/* Estimates Comparison Indicator */}
-            {analysis.has_estimates_comparison && (
+            {hasComparativeAnalysis() && (
               <Alert severity="success" sx={{ mb: 2 }}>
                 <Typography>
                   ✓ This analysis includes comparison with estimates data from the knowledge base
