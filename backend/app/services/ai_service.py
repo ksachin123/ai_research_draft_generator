@@ -135,6 +135,36 @@ class AIService:
             # Parse structured response for initial analysis
             structured_analysis = self._parse_initial_analysis_response(analysis_content)
             
+            # Store the raw AI response content in the structured analysis
+            structured_analysis["_raw_ai_response"] = analysis_content
+            
+            # Store structured analysis components for document content JSON
+            structured_analysis["_document_content"] = {
+                "analysis_sections": {
+                    "executive_summary": structured_analysis.get("executive_summary", ""),
+                    "analyst_estimates_comparison": structured_analysis.get("analyst_estimates_comparison", []),
+                    "financial_performance": structured_analysis.get("financial_performance", []),
+                    "business_segments": structured_analysis.get("business_segments", []),
+                    "strategic_developments": structured_analysis.get("strategic_developments", []),
+                    "forward_looking_insights": structured_analysis.get("forward_looking_insights", []),
+                    "estimate_accuracy_assessment": structured_analysis.get("estimate_accuracy_assessment", []),
+                    "key_changes": structured_analysis.get("key_changes", []),
+                    "new_insights": structured_analysis.get("new_insights", []),
+                    "potential_thesis_impact": structured_analysis.get("potential_thesis_impact", ""),
+                    "analysis_generation_details": structured_analysis.get("analysis_generation_details", ""),
+                    "confidence_assessment": structured_analysis.get("confidence_assessment", ""),
+                    "requires_attention": structured_analysis.get("requires_attention", [])
+                },
+                "content_metadata": {
+                    "analysis_type": analysis_type,
+                    "has_analyst_estimates": bool(analyst_estimates),
+                    "context_documents_used": len(context_documents),
+                    "analysis_timestamp": response.get('created', None),
+                    "model_used": self.model,
+                    "content_version": "1.0"
+                }
+            }
+            
             # Add prompt and generation metadata to the response
             structured_analysis["_generation_metadata"] = {
                 "prompt_used": prompt,
@@ -147,7 +177,7 @@ class AIService:
                 "analyst_estimates_length": len(analyst_estimates) if analyst_estimates else 0
             }
             
-            logger.info(f"Generated initial analysis for {analysis_type}")
+            logger.info(f"Generated initial analysis for {analysis_type} with structured content storage")
             self._log_api_call('chat.initial_analysis', response_preview=analysis_content)
             return structured_analysis
             

@@ -47,7 +47,7 @@ interface UploadingFile {
 }
 
 const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplete }) => {
-  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('10-K');
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('10-Q');
   const [description, setDescription] = useState<string>('');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [globalError, setGlobalError] = useState<string | null>(null);

@@ -239,7 +239,10 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   p: ({ children }) => <Typography variant="body1" paragraph>{children}</Typography>,
                   h1: ({ children }) => <Typography variant="h4" gutterBottom>{children}</Typography>,
                   h2: ({ children }) => <Typography variant="h5" gutterBottom>{children}</Typography>,
-                  h3: ({ children }) => <Typography variant="h6" gutterBottom>{children}</Typography>,
+                  h3: ({ children }) => <Typography variant="h6" gutterBottom fontWeight="bold">{children}</Typography>,
+                  h4: ({ children }) => <Typography variant="subtitle1" gutterBottom fontWeight="bold">{children}</Typography>,
+                  h5: ({ children }) => <Typography variant="subtitle2" gutterBottom fontWeight="bold">{children}</Typography>,
+                  h6: ({ children }) => <Typography variant="body1" gutterBottom fontWeight="bold">{children}</Typography>,
                   ul: ({ children }) => <List dense>{children}</List>,
                   ol: ({ children }) => <List dense>{children}</List>,
                   li: ({ children }) => (
@@ -276,56 +279,121 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
     );
   };
 
-  // Enhanced component to render markdown arrays with table detection
+  // Enhanced component to render markdown arrays with table detection and proper grouping
   const MarkdownArrayRenderer: React.FC<{ items: string[] }> = ({ items }) => {
     // Check if the array contains table data
     const hasTableData = items.some(item => item.trim().startsWith('|') && item.includes('|'));
     
     if (hasTableData) {
-      // Reconstruct table from array elements
-      const tableRows: string[] = [];
-      const nonTableItems: string[] = [];
-      let currentTableBlock: string[] = [];
+      // Group items into logical sections (headers followed by tables, or standalone items)
+      const contentBlocks: Array<{
+        type: 'markdown_block' | 'list_item';
+        content: string;
+      }> = [];
       
-      for (const item of items) {
-        if (item.trim().startsWith('|') && item.includes('|')) {
-          currentTableBlock.push(item);
-        } else {
-          // If we have accumulated table rows, join them and add to tableRows
-          if (currentTableBlock.length > 0) {
-            tableRows.push(currentTableBlock.join('\n'));
-            currentTableBlock = [];
+      let currentBlock: string[] = [];
+      let inTableGroup = false;
+      
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i].trim();
+        const isTableRow = item.startsWith('|') && item.includes('|');
+        const isHeader = item.startsWith('#');
+        const nextItem = i < items.length - 1 ? items[i + 1].trim() : '';
+        const nextIsTableRow = nextItem.startsWith('|') && nextItem.includes('|');
+        
+        // Start a new block if we encounter a header followed by a table
+        if (isHeader && nextIsTableRow) {
+          // Finish current block if exists
+          if (currentBlock.length > 0) {
+            contentBlocks.push({
+              type: 'markdown_block',
+              content: currentBlock.join('\n')
+            });
+            currentBlock = [];
           }
-          nonTableItems.push(item);
+          
+          // Start new table group
+          currentBlock.push(item);
+          inTableGroup = true;
+        }
+        // Continue building table group
+        else if (inTableGroup && isTableRow) {
+          currentBlock.push(item);
+        }
+        // End table group and start new block
+        else if (inTableGroup && !isTableRow) {
+          // Finish table group
+          if (currentBlock.length > 0) {
+            contentBlocks.push({
+              type: 'markdown_block',
+              content: currentBlock.join('\n')
+            });
+            currentBlock = [];
+          }
+          
+          // Add current non-table item
+          if (item) {
+            if (isHeader && nextIsTableRow) {
+              // This header starts a new table group
+              currentBlock.push(item);
+              inTableGroup = true;
+            } else {
+              // Standalone item
+              contentBlocks.push({
+                type: 'list_item',
+                content: item
+              });
+            }
+          }
+          inTableGroup = false;
+        }
+        // Handle standalone items when not in table group
+        else if (!inTableGroup) {
+          if (isHeader && nextIsTableRow) {
+            // Start new table group
+            currentBlock.push(item);
+            inTableGroup = true;
+          } else if (isTableRow) {
+            // Orphaned table row - add to block
+            currentBlock.push(item);
+            inTableGroup = true;
+          } else {
+            // Standalone text item
+            if (item) {
+              contentBlocks.push({
+                type: 'list_item',
+                content: item
+              });
+            }
+          }
         }
       }
       
-      // Add any remaining table block
-      if (currentTableBlock.length > 0) {
-        tableRows.push(currentTableBlock.join('\n'));
+      // Add any remaining block
+      if (currentBlock.length > 0) {
+        contentBlocks.push({
+          type: 'markdown_block',
+          content: currentBlock.join('\n')
+        });
       }
       
       return (
         <Box>
-          {/* Render reconstructed tables */}
-          {tableRows.map((tableContent, tableIndex) => (
-            <Box key={`table-${tableIndex}`} sx={{ mb: 2 }}>
-              <MarkdownRenderer content={tableContent} />
-            </Box>
-          ))}
-          
-          {/* Render non-table items as list */}
-          {nonTableItems.length > 0 && (
-            <List dense>
-              {nonTableItems.map((item, index) => (
-                <ListItem key={`text-${index}`} disablePadding>
-                  <Box sx={{ ml: 1, width: '100%' }}>
-                    <MarkdownRenderer content={item} />
-                  </Box>
-                </ListItem>
-              ))}
-            </List>
-          )}
+          {contentBlocks.map((block, index) => {
+            if (block.type === 'markdown_block') {
+              return (
+                <Box key={`block-${index}`} sx={{ mb: 2 }}>
+                  <MarkdownRenderer content={block.content} />
+                </Box>
+              );
+            } else {
+              return (
+                <Box key={`item-${index}`} sx={{ mb: 1 }}>
+                  <MarkdownRenderer content={block.content} />
+                </Box>
+              );
+            }
+          })}
         </Box>
       );
     }
