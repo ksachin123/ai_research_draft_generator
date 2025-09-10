@@ -51,6 +51,9 @@ python-dateutil==2.8.2
 uuid==1.30
 tenacity==8.2.3
 werkzeug==2.3.7
+beautifulsoup4==4.12.2  # For enhanced HTML/SVG parsing
+xml-python==0.1.0       # For SVG processing
+lxml==4.9.3              # XML/HTML parser for estimates_parser
 ```
 
 ### 3.2 Configuration Management
@@ -585,6 +588,10 @@ class DocumentProcessingService:
 
 ### 3.6 AI Service Integration
 
+**Enhanced AI Service with Comparative Analysis**
+
+The AI service has been enhanced with sophisticated comparative analysis capabilities that integrate estimates data for thorough quantitative analysis.
+
 **File**: `backend/app/services/ai_service.py`
 ```python
 import openai
@@ -754,6 +761,65 @@ class AIService:
         sections["investment_thesis_impact"] = sections["investment_thesis_impact"].strip()
         
         return sections
+```
+
+**Enhanced Comparative Analysis Capabilities**
+
+The AI service now includes comprehensive comparative analysis functionality:
+
+```python
+def _generate_collective_comparative_analysis(self, documents_text, estimates_data):
+    """
+    Generate thorough comparative analysis with quantitative variance analysis
+    
+    Enhanced capabilities include:
+    - Revenue variance calculations with percentage analysis
+    - Margin analysis with basis point precision
+    - Segment performance comparison
+    - Historical trend analysis with statistical significance
+    - Estimates integration with actuals vs consensus analysis
+    """
+    
+    # Enhanced prompt for thorough quantitative analysis
+    comparative_prompt = f"""
+    Perform a comprehensive comparative analysis between the new document content 
+    and existing estimates data. Focus on:
+    
+    1. QUANTITATIVE VARIANCE ANALYSIS:
+       - Calculate precise variance percentages for key metrics
+       - Identify beats/misses with statistical significance
+       - Analyze margin changes in basis points
+    
+    2. SEGMENT ANALYSIS:
+       - Compare segment performance against estimates
+       - Identify outperforming and underperforming segments
+       - Calculate segment contribution variances
+    
+    3. ESTIMATES INTEGRATION:
+       - Analyze actuals vs consensus estimates
+       - Identify revision trends and analyst sentiment shifts
+       - Assess guidance implications for future estimates
+    
+    Document Content: {documents_text}
+    Estimates Data: {estimates_data}
+    """
+    
+    # Process with enhanced analytical framework
+    response = self._call_openai_with_retry(comparative_prompt)
+    return self._parse_comparative_analysis(response)
+
+def _extract_revenue_variance(self, content, estimates_data):
+    """Extract and calculate revenue variance with precision"""
+    # Implementation includes regex pattern matching, 
+    # numerical extraction, and statistical calculation
+    
+def _extract_margin_variance(self, content, estimates_data):
+    """Extract and calculate margin variance in basis points"""
+    # Implementation for precise margin analysis
+    
+def _extract_segment_variance(self, content, estimates_data):
+    """Extract and calculate segment performance variances"""
+    # Implementation for segment-level analysis
 ```
 
 ### 3.6a Estimates Processing Service
@@ -1163,6 +1229,8 @@ npm install react-router-dom
 npm install date-fns
 npm install react-dropzone
 npm install recharts
+npm install react-markdown  # For enhanced markdown rendering
+npm install typescript @types/react @types/react-dom  # TypeScript support
 ```
 
 ### 4.2 Package.json Configuration
@@ -1187,9 +1255,15 @@ npm install recharts
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
+    "react-markdown": "^9.0.1",
     "react-router-dom": "^6.8.1",
     "react-scripts": "5.0.1",
+    "typescript": "^4.9.5",
     "web-vitals": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -1398,6 +1472,177 @@ export const companyService = {
     return await api.get(`/companies/${ticker}/reports`);
   }
 };
+```
+
+### 4.4 Enhanced UI Components with TypeScript
+
+The frontend has been enhanced with production-ready TypeScript components that provide type safety and improved user experience.
+
+#### 4.4.1 Document Analysis Display Component
+
+**File**: `frontend/src/components/document/DocumentAnalysisDisplay.tsx`
+```typescript
+import React from 'react';
+import { Box, Typography, Paper } from '@mui/material';
+import ReactMarkdown from 'react-markdown';
+
+interface DocumentAnalysisProps {
+  analysisData: {
+    analysis?: {
+      comparative_analysis?: {
+        has_estimates_comparison?: boolean;
+        quantitative_analysis?: any;
+        qualitative_insights?: string[];
+        estimates_integration?: string;
+      };
+    };
+  };
+}
+
+const DocumentAnalysisDisplay: React.FC<DocumentAnalysisProps> = ({ analysisData }) => {
+  // Utility function for type-safe analysis checking
+  const hasComparativeAnalysis = (): boolean => {
+    return !!(
+      analysisData?.analysis?.comparative_analysis?.has_estimates_comparison ||
+      analysisData?.analysis?.comparative_analysis?.quantitative_analysis ||
+      analysisData?.analysis?.comparative_analysis?.qualitative_insights?.length
+    );
+  };
+
+  // Sanitize markdown content for safe rendering
+  const sanitizeMarkdown = (content: string | string[]): string => {
+    if (Array.isArray(content)) {
+      return content
+        .filter(item => typeof item === 'string')
+        .join('\n\n');
+    }
+    return typeof content === 'string' ? content : '';
+  };
+
+  return (
+    <Paper elevation={2} sx={{ p: 3, mb: 2 }}>
+      {hasComparativeAnalysis() && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+            📊 Comparative Analysis
+          </Typography>
+          
+          {/* Quantitative Analysis Section */}
+          {analysisData.analysis?.comparative_analysis?.quantitative_analysis && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Quantitative Analysis
+              </Typography>
+              {/* Render quantitative metrics */}
+            </Box>
+          )}
+
+          {/* Qualitative Insights Section */}
+          {analysisData.analysis?.comparative_analysis?.qualitative_insights && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Key Insights
+              </Typography>
+              <ReactMarkdown>
+                {sanitizeMarkdown(analysisData.analysis.comparative_analysis.qualitative_insights)}
+              </ReactMarkdown>
+            </Box>
+          )}
+        </Box>
+      )}
+    </Paper>
+  );
+};
+
+export default DocumentAnalysisDisplay;
+```
+
+#### 4.4.2 Markdown Array Renderer Utility
+
+**File**: `frontend/src/components/common/MarkdownArrayRenderer.tsx`
+```typescript
+import React from 'react';
+import ReactMarkdown from 'react-markdown';
+
+interface MarkdownArrayRendererProps {
+  content: string | string[];
+  className?: string;
+}
+
+const MarkdownArrayRenderer: React.FC<MarkdownArrayRendererProps> = ({ content, className }) => {
+  // Handle hybrid string/array types safely
+  const renderContent = () => {
+    if (Array.isArray(content)) {
+      return content
+        .filter(item => typeof item === 'string')
+        .map((item, index) => (
+          <ReactMarkdown key={index} className={className}>
+            {item}
+          </ReactMarkdown>
+        ));
+    }
+    
+    if (typeof content === 'string') {
+      return <ReactMarkdown className={className}>{content}</ReactMarkdown>;
+    }
+    
+    return null;
+  };
+
+  return <>{renderContent()}</>;
+};
+
+export default MarkdownArrayRenderer;
+```
+
+#### 4.4.3 TypeScript Interface Definitions
+
+**File**: `frontend/src/types/index.ts`
+```typescript
+export interface ComparativeAnalysis {
+  has_estimates_comparison?: boolean;
+  quantitative_analysis?: {
+    revenue_variance?: {
+      actual: number;
+      estimate: number;
+      variance_amount: number;
+      variance_percentage: number;
+      direction: 'beat' | 'miss' | 'inline';
+    };
+    margin_analysis?: any;
+  };
+  qualitative_insights?: string[];
+  estimates_integration?: string;
+}
+
+export interface DocumentAnalysis {
+  analysis?: {
+    comparative_analysis?: ComparativeAnalysis;
+    executive_summary?: string | string[];
+    key_changes?: string[];
+    new_insights?: string[];
+  };
+}
+
+export interface EstimatesData {
+  ticker: string;
+  has_estimates_data: boolean;
+  data_source: 'parsed_svg' | 'fallback_data';
+  last_updated: string;
+  financial_data: {
+    balance_sheet: FinancialItem[];
+    income_statement: FinancialItem[];
+    cash_flow: FinancialItem[];
+  };
+}
+
+export interface FinancialItem {
+  item: string;
+  type: 'actual' | 'estimate';
+  value: number;
+  period: string;
+  currency: string;
+}
 ```
 
 ## 5. Deployment & Running

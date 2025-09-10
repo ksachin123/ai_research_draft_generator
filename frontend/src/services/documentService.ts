@@ -26,6 +26,10 @@ export interface DocumentAnalysis {
     actionable_insights: string[];
     investment_implications: string;
     margin_comparison: string[];
+    // New analyst estimates comparison fields
+    analyst_estimates_comparison?: string[];
+    estimate_accuracy_assessment?: string[];
+    analysis_generation_details?: string;
     // Enhanced analysis fields for estimates comparison
     comparative_analysis?: {
       executive_summary?: string;
@@ -55,6 +59,8 @@ export interface DocumentAnalysis {
     analysis_type: string;
     context_documents_count: number;
     generation_timestamp: string;
+    analyst_estimates_included?: boolean;
+    analyst_estimates_length?: number;
   };
   comparative_data?: {
     document_metrics: any;

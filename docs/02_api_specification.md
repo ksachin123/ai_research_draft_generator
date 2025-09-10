@@ -9,7 +9,9 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 - **Content-Type**: `application/json`
 - **Documentation**: `http://localhost:5001/swagger` (Swagger UI)
 
-### 1.2 Standard Response Format
+### 1.2 Standard ## 6. Report Generation APIs
+
+### 6.1 Generate Draft Reportponse Format
 ```json
 {
   "success": true,
@@ -301,7 +303,143 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 - `404`: Company not found
 - `500`: Server error
 
-## 5. Report Generation APIs
+## 5. Estimates Management APIs
+
+### 5.1 Refresh Estimates Data
+**Endpoint**: `POST /api/estimates/refresh/{ticker}`
+
+**Description**: Refresh estimates data for a specific company by parsing SVG financial data from uploaded documents.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "estimates_refreshed": true,
+    "processing_status": "completed",
+    "parsed_data": {
+      "balance_sheet": {
+        "total_items": 15,
+        "actuals_count": 8,
+        "estimates_count": 7
+      },
+      "income_statement": {
+        "total_items": 12,
+        "actuals_count": 6,
+        "estimates_count": 6
+      },
+      "cash_flow": {
+        "total_items": 10,
+        "actuals_count": 5,
+        "estimates_count": 5
+      }
+    },
+    "refresh_timestamp": "2025-09-07T10:30:00Z"
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Parsing error or server error
+
+### 5.2 Get Estimates Data
+**Endpoint**: `GET /api/estimates/data/{ticker}`
+
+**Description**: Retrieve current estimates data for a specific company with fallback support.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "has_estimates_data": true,
+    "data_source": "parsed_svg", // or "fallback_data"
+    "last_updated": "2025-09-07T10:30:00Z",
+    "financial_data": {
+      "balance_sheet": [
+        {
+          "item": "Total Revenue",
+          "type": "actual",
+          "value": 365817000000,
+          "period": "2024",
+          "currency": "USD"
+        },
+        {
+          "item": "Total Revenue",
+          "type": "estimate",
+          "value": 385000000000,
+          "period": "2025",
+          "currency": "USD"
+        }
+      ],
+      "income_statement": [...],
+      "cash_flow": [...]
+    }
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company not found
+- `500`: Server error
+
+### 5.3 Parse SVG Document
+**Endpoint**: `POST /api/estimates/parse/{ticker}`
+
+**Description**: Parse SVG financial data from a specific document for estimates extraction.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Request Body**:
+```json
+{
+  "document_path": "path/to/document.pdf",
+  "parse_options": {
+    "include_balance_sheet": true,
+    "include_income_statement": true,
+    "include_cash_flow": true
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "document_parsed": true,
+    "parsed_sections": ["balance_sheet", "income_statement", "cash_flow"],
+    "extraction_results": {
+      "total_data_points": 37,
+      "actuals_extracted": 19,
+      "estimates_extracted": 18,
+      "parsing_errors": 0
+    },
+    "timestamp": "2025-09-07T10:30:00Z"
+  }
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `400`: Invalid document or parsing options
+- `404`: Company or document not found
+- `500`: Parsing error or server error
+
+## 6. Report Generation APIs
 
 ### 5.1 Generate Draft Report
 **Endpoint**: `POST /api/companies/{ticker}/reports/generate`
@@ -357,6 +495,32 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
         "rating_change": "none",
         "target_price_change": "none",
         "key_drivers_affected": ["Services revenue growth reacceleration"]
+      },
+      "comparative_analysis": {
+        "has_estimates_comparison": true,
+        "quantitative_analysis": {
+          "revenue_variance": {
+            "actual": 94930000000,
+            "estimate": 94580000000,
+            "variance_amount": 350000000,
+            "variance_percentage": 0.37,
+            "direction": "beat"
+          },
+          "margin_analysis": {
+            "gross_margin": {
+              "actual": 0.462,
+              "estimate": 0.458,
+              "variance": 0.004,
+              "analysis": "Gross margin of 46.2% beat estimates by 40bps"
+            }
+          }
+        },
+        "qualitative_insights": [
+          "Services revenue acceleration beyond estimates indicates stronger ecosystem monetization",
+          "iPhone unit sales slightly below estimates offset by higher ASPs",
+          "Management guidance implies confidence in holiday quarter execution"
+        ],
+        "estimates_integration": "Analysis incorporates comprehensive variance analysis against analyst estimates with detailed breakdown of beats/misses across key financial metrics"
       }
     },
     "sources": [

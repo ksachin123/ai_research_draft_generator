@@ -142,26 +142,31 @@ The system encompasses:
 
 **Priority**: Must Have
 
-#### FR-004b: Comparative Analysis Generation
-**Requirement**: The system shall perform comparative analysis between newly uploaded documents and existing estimates data to identify variances and investment implications.
+#### FR-004b: Enhanced Comparative Analysis Generation
+**Requirement**: The system shall perform comprehensive comparative analysis between newly uploaded documents and existing estimates data to identify quantitative variances, qualitative insights, and investment implications with statistical precision.
 
 **Acceptance Criteria**:
-- System extracts financial metrics from uploaded documents including:
-  - Revenue figures by segment and total
-  - Margin data (gross, operating, net)
-  - Growth rates and year-over-year comparisons
-  - Quarterly performance indicators
-- System compares extracted document metrics against estimates database:
-  - Identifies beats/misses vs analyst estimates
-  - Calculates variance percentages where possible
-  - Matches document quarter to appropriate estimates period
-- System generates investment implications analysis:
-  - Impact on investment thesis
-  - Changes to risk profile
-  - Revision to growth assumptions
-  - Segment performance implications
-- System integrates comparative insights into AI-generated analysis
-- System provides structured variance analysis with quantified impacts
+- System extracts financial metrics from uploaded documents with high accuracy including:
+  - Revenue figures by segment and total with variance calculations
+  - Margin data (gross, operating, net) with basis point precision
+  - Growth rates and year-over-year comparisons with statistical significance
+  - Quarterly performance indicators with historical trend analysis
+- System performs advanced quantitative comparison against estimates database:
+  - Calculates precise variance amounts and percentages for all metrics
+  - Identifies beats/misses vs analyst estimates with confidence scoring
+  - Matches document periods to appropriate estimates with temporal alignment
+  - Provides segment-level variance analysis with contribution impacts
+- System generates comprehensive investment implications analysis:
+  - Quantified impact on investment thesis with scenario modeling
+  - Detailed changes to risk profile with probability assessments
+  - Statistical revision to growth assumptions with confidence intervals
+  - Segment performance implications with cross-segment analysis
+- System integrates enhanced comparative insights into AI-generated analysis:
+  - Thorough quantitative analysis with multiple variance extraction methods
+  - Qualitative insights derived from quantitative findings
+  - Estimates integration context for comprehensive understanding
+- System provides structured variance analysis with quantified impacts and statistical validation
+- System supports fallback estimates data to ensure consistent analysis capability
 
 **Priority**: Must Have
 
@@ -171,16 +176,20 @@ The system encompasses:
 **Acceptance Criteria**:
 - System provides REST API endpoints:
   - `POST /api/estimates/{ticker}/refresh` - Refresh estimates data from SVG files
-  - `GET /api/estimates/{ticker}/data` - Retrieve current estimates data
-  - `POST /api/estimates/{ticker}/compare` - Generate comparative analysis
+  - `GET /api/estimates/{ticker}/data` - Retrieve current estimates data with fallback support
+  - `POST /api/estimates/{ticker}/parse` - Parse specific documents for estimates extraction
+  - `POST /api/estimates/{ticker}/compare` - Generate enhanced comparative analysis
   - `GET /api/estimates/{ticker}/segments` - Get segment-specific estimates
   - `GET /api/estimates/{ticker}/margins` - Get margin estimates data
   - `GET /api/estimates/available-tickers` - List tickers with estimates data
-- API supports force refresh to reprocess unchanged files
-- API returns structured estimates data with metadata
-- API provides comparative analysis results in structured format
-- API handles error cases gracefully with appropriate HTTP status codes
+- API supports enhanced parsing capabilities for complex financial documents
+- API provides comprehensive comparative analysis with quantitative variance analysis
+- API supports force refresh to reprocess unchanged files with improved parsing
+- API returns structured estimates data with enhanced metadata and data source tracking
+- API provides detailed comparative analysis results with statistical precision
+- API handles error cases gracefully with detailed error messages and appropriate HTTP status codes
 - API integrates with existing authentication and authorization systems
+- API supports real-time data processing with background task management
 
 **Priority**: Must Have
 
@@ -219,21 +228,37 @@ The system encompasses:
 
 **Priority**: Must Have
 
-#### FR-007a: Analysis Results Display
-**Requirement**: The system shall display initial analysis results to the user for review before draft report generation.
+#### FR-007a: Enhanced Analysis Results Display with TypeScript Safety
+**Requirement**: The system shall display comprehensive analysis results including comparative analysis in a production-ready, type-safe interface for user review before draft report generation.
 
 **Acceptance Criteria**:
-- UI displays structured analysis results in readable format with sections for:
-  - Executive summary of key findings
-  - Identified changes vs. existing research
-  - New information not previously covered
-  - Potential impact on investment thesis
-  - Confidence levels for each finding
-- UI shows source citations from knowledge base matches
-- UI provides relevance scores for matched historical content
-- UI allows user to review and validate analysis findings
-- UI provides options to proceed with draft report generation or modify analysis parameters
-- System completes initial analysis within 1-2 minutes after document upload
+- UI displays structured analysis results in responsive, professional format with enhanced sections for:
+  - Executive summary of key findings with ReactMarkdown rendering
+  - Identified changes vs. existing research with quantitative variance display
+  - Enhanced comparative analysis section with estimates integration
+  - Quantitative analysis display with variance calculations and statistical significance
+  - Qualitative insights derived from comparative analysis
+  - New information not previously covered with contextualized insights
+  - Potential impact on investment thesis with statistical confidence
+  - Confidence levels and reliability scores for each finding
+- UI provides enhanced comparative analysis display featuring:
+  - Revenue variance analysis with beat/miss indicators and percentage calculations
+  - Margin analysis with basis point precision and trend visualization
+  - Segment performance comparison with contribution analysis
+  - Historical context with statistical significance indicators
+- UI implements TypeScript-safe rendering with proper type checking:
+  - Hybrid string/array content handling with MarkdownArrayRenderer utility
+  - Optional chaining for safe nested object access
+  - Interface definitions for all analysis data structures
+  - Production-ready error handling and fallback display
+- UI shows detailed source citations from knowledge base matches with relevance scoring
+- UI displays estimates data integration status and fallback data usage indicators
+- UI provides comprehensive relevance scores for matched historical content and estimates data
+- UI allows user to review and validate enhanced analysis findings with interactive elements
+- UI provides streamlined options to proceed with draft report generation or modify analysis parameters
+- UI ensures accessibility standards compliance and responsive design for various screen sizes
+- System completes enhanced comparative analysis within 2-3 minutes after document upload including estimates processing
+- UI implements production styling without debug elements for professional appearance
 
 **Priority**: Must Have
 

@@ -37,6 +37,11 @@ class Config:
     # Logging Configuration
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
     LOG_FILE = os.environ.get('LOG_FILE', 'app.log')
+    # AI / OpenAI Logging
+    AI_API_LOGGING_ENABLED = os.environ.get('AI_API_LOGGING_ENABLED', 'true').lower() in ['1','true','yes','on']
+    AI_API_LOG_PROMPTS = os.environ.get('AI_API_LOG_PROMPTS', 'false').lower() in ['1','true','yes','on']
+    AI_API_LOG_RESPONSES = os.environ.get('AI_API_LOG_RESPONSES', 'false').lower() in ['1','true','yes','on']
+    AI_API_MAX_LOG_CHARS = int(os.environ.get('AI_API_MAX_LOG_CHARS', '1200'))
 
 class DevelopmentConfig(Config):
     DEBUG = True

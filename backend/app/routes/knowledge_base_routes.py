@@ -24,7 +24,8 @@ knowledge_base_bp = Namespace('knowledge-base', description='Knowledge base mana
 # Request models
 refresh_request_model = knowledge_base_bp.model('RefreshRequest', {
     'force_reprocess': fields.Boolean(default=False, description='Force reprocessing of all files'),
-    'include_investment_data': fields.Boolean(default=True, description='Include investment data processing')
+    'include_investment_data': fields.Boolean(default=True, description='Include investment data processing'),
+    'include_financial_statements': fields.Boolean(default=True, description='Include financial statements processing')
 })
 
 # Response models
@@ -45,6 +46,7 @@ class KnowledgeBaseRefresh(Resource):
             data = request.get_json() or {}
             force_reprocess = data.get('force_reprocess', False)
             include_investment_data = data.get('include_investment_data', True)
+            include_financial_statements = data.get('include_financial_statements', True)
             
             logger.info(f"Starting knowledge base refresh for {ticker}")
             
@@ -52,7 +54,8 @@ class KnowledgeBaseRefresh(Resource):
             result = kb_service.refresh_knowledge_base(
                 ticker.upper(), 
                 force_reprocess=force_reprocess,
-                include_investment_data=include_investment_data
+                include_investment_data=include_investment_data,
+                include_estimates=include_financial_statements
             )
             
             return {
@@ -62,6 +65,7 @@ class KnowledgeBaseRefresh(Resource):
                     "status": result["status"],
                     "reports_processed": result["reports_processed"],
                     "investment_data_processed": result["investment_data_processed"],
+                    "financial_statements_processed": result["financial_statements_processed"],
                     "total_documents": result["total_documents"]
                 },
                 "message": f"Knowledge base refresh completed for {ticker.upper()}",
@@ -206,6 +210,173 @@ class KnowledgeBaseDocumentTypes(Resource):
                 "error": {
                     "code": "DATABASE_ERROR",
                     "message": f"Failed to retrieve document types for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+
+@knowledge_base_bp.route('/<string:ticker>/financial-data')
+@knowledge_base_bp.doc('get_financial_data_summary')
+class FinancialDataSummary(Resource):
+    @knowledge_base_bp.doc('get_financial_data_summary', 
+                          description='Get summary of all financial data for a ticker')
+    def get(self, ticker):
+        """Get summary of financial data for a ticker"""
+        try:
+            logger.info(f"Getting financial data summary for {ticker}")
+            
+            # Get financial data summary
+            summary = db_service.get_financial_data_summary(ticker)
+            
+            return {
+                "success": True,
+                "data": summary,
+                "message": f"Financial data summary for {ticker.upper()} retrieved successfully",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get financial data summary for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR", 
+                    "message": f"Failed to retrieve financial data summary for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+
+@knowledge_base_bp.route('/<string:ticker>/financial-data/delete')
+@knowledge_base_bp.doc('delete_financial_data')
+class FinancialDataDelete(Resource):
+    
+    delete_request_model = knowledge_base_bp.model('DeleteFinancialDataRequest', {
+        'delete_all': fields.Boolean(default=False, description='Delete all financial data for the ticker'),
+        'date_filter': fields.String(required=False, description='Date filter: exact date (YYYY-MM-DD), before:YYYY-MM-DD, or after:YYYY-MM-DD')
+    })
+    
+    @knowledge_base_bp.expect(delete_request_model)
+    @knowledge_base_bp.doc('delete_financial_data',
+                          description='Delete financial data for a ticker with optional filters')
+    def post(self, ticker):
+        """Delete financial data for a ticker"""
+        try:
+            data = request.get_json() or {}
+            delete_all = data.get('delete_all', False)
+            date_filter = data.get('date_filter')
+            
+            logger.info(f"Deleting financial data for {ticker} with delete_all={delete_all}, date_filter={date_filter}")
+            
+            # Validate input
+            if not delete_all and not date_filter:
+                return {
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": "Must specify either 'delete_all=true' or provide 'date_filter'",
+                        "details": "Use delete_all=true to delete all financial data, or provide date_filter with format: YYYY-MM-DD, before:YYYY-MM-DD, or after:YYYY-MM-DD"
+                    },
+                    "timestamp": datetime.utcnow().isoformat() + "Z"
+                }, 400
+            
+            # Delete financial data
+            result = db_service.delete_financial_data(ticker, delete_all, date_filter)
+            
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Financial data deletion completed for {ticker.upper()}"),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except ValueError as e:
+            logger.error(f"Validation error deleting financial data for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": str(e),
+                    "details": "Check the date_filter format. Use: YYYY-MM-DD, before:YYYY-MM-DD, or after:YYYY-MM-DD"
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 400
+            
+        except Exception as e:
+            logger.error(f"Failed to delete financial data for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR",
+                    "message": f"Failed to delete financial data for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+
+@knowledge_base_bp.route('/<string:ticker>/collection')
+@knowledge_base_bp.doc('get_collection_data')
+class CollectionData(Resource):
+    @knowledge_base_bp.doc('get_collection_data',
+                          description='Get raw collection data as stored in database for a ticker')
+    def get(self, ticker):
+        """Get raw collection data for a ticker"""
+        try:
+            logger.info(f"Getting raw collection data for {ticker}")
+            
+            # Get raw collection data exactly as stored
+            collection_data = db_service.get_collection_data(ticker)
+            
+            return {
+                "success": True,
+                "data": collection_data,
+                "message": f"Raw collection data for {ticker.upper()} retrieved successfully",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get collection data for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR",
+                    "message": f"Failed to retrieve collection data for {ticker.upper()}",
+                    "details": str(e)
+                },
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }, 500
+
+
+@knowledge_base_bp.route('/<string:ticker>/collection/delete')
+@knowledge_base_bp.doc('delete_collection')
+class CollectionDelete(Resource):
+    @knowledge_base_bp.doc('delete_collection',
+                          description='Delete entire collection for a ticker')
+    def post(self, ticker):
+        """Delete entire collection for a ticker"""
+        try:
+            logger.info(f"Deleting collection for {ticker}")
+            
+            # Delete the collection
+            result = db_service.delete_collection(ticker)
+            
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Collection for {ticker.upper()} deleted successfully"),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to delete collection for {ticker}: {str(e)}")
+            return {
+                "success": False,
+                "error": {
+                    "code": "DATABASE_ERROR",
+                    "message": f"Failed to delete collection for {ticker.upper()}",
                     "details": str(e)
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z"

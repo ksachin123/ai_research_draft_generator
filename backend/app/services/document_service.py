@@ -308,15 +308,20 @@ class DocumentProcessingService:
             # Extract financial metrics from the document
             document_metrics = self._extract_document_metrics(full_text, document_date)
             
-            # Get estimates data for comparison
+            # Get comprehensive financial data for comparison
             comparative_analysis = {}
             if self.kb_service:
-                estimates_data = self.kb_service.get_estimates_data(ticker)
-                if estimates_data:
-                    # Perform comparative analysis
-                    comparative_analysis = self._perform_comparative_analysis(
-                        ticker, document_metrics, estimates_data, document_date
-                    )
+                # Use comprehensive financial data only
+                comprehensive_data = self.kb_service.get_comprehensive_financial_data(ticker)
+                if comprehensive_data and comprehensive_data.get("has_data"):
+                    logger.info(f"Using comprehensive financial data for analysis of {ticker}")
+                    # Perform comprehensive analysis with enhanced financial data
+                    # comparative_analysis = self._perform_comprehensive_financial_analysis(
+                    #     ticker, document_metrics, comprehensive_data, document_date
+                    # )
+                else:
+                    logger.info(f"No comprehensive financial data available for {ticker}")
+                    comparative_analysis = {}
             
             return {
                 "embedded_chunks": embedded_chunks,
@@ -490,9 +495,112 @@ class DocumentProcessingService:
             logger.error(f"Failed to extract document metrics: {str(e)}")
             return metrics
     
+    def _perform_comprehensive_financial_analysis(self, ticker: str, document_metrics: Dict, 
+                                                financial_data: Dict, document_date: Optional[datetime]) -> Dict:
+        """
+        Perform comprehensive analysis using enhanced financial data.
+        Compares document metrics against Balance Sheet, Income Statement, Cash Flow, and Margin Analysis data.
+        """
+        analysis = {
+            "revenue_comparison": [],
+            "margin_comparison": [],
+            "segment_comparison": [],
+            "balance_sheet_insights": [],
+            "cash_flow_insights": [],
+            "growth_analysis": [],
+            "profitability_analysis": [],
+            "quarter_context": None,
+            "has_comprehensive_data": True,
+            "data_sources": []
+        }
+        
+        try:
+            # Set quarter context
+            if document_date:
+                quarter = ((document_date.month - 1) // 3) + 1
+                analysis["quarter_context"] = f"Q{quarter} {document_date.year}"
+            
+            # Track which financial statements are available
+            available_statements = []
+            if financial_data.get("income_statement"):
+                available_statements.append("Income Statement")
+            if financial_data.get("balance_sheet"):
+                available_statements.append("Balance Sheet")
+            if financial_data.get("cash_flow"):
+                available_statements.append("Cash Flow")
+            if financial_data.get("margin_analysis"):
+                available_statements.append("Margin Analysis")
+            
+            analysis["data_sources"] = available_statements
+            
+            # 1. Revenue and Income Statement Analysis
+            if document_metrics.get("revenue") and financial_data.get("income_statement"):
+                income_data = financial_data["income_statement"]
+                
+                # Compare revenue figures from document vs financial statements
+                revenue_insights = self._analyze_revenue_performance(
+                    document_metrics["revenue"], income_data, analysis["quarter_context"]
+                )
+                analysis["revenue_comparison"].extend(revenue_insights)
+                
+                # Analyze profitability metrics
+                if document_metrics.get("margins") and income_data.get("financial_metrics"):
+                    profitability_insights = self._analyze_profitability_trends(
+                        document_metrics["margins"], income_data["financial_metrics"]
+                    )
+                    analysis["profitability_analysis"].extend(profitability_insights)
+            
+            # 2. Margin Analysis Comparison
+            if document_metrics.get("margins") and financial_data.get("margin_analysis"):
+                margin_data = financial_data["margin_analysis"]
+                margin_insights = self._analyze_margin_performance(
+                    document_metrics["margins"], margin_data
+                )
+                analysis["margin_comparison"].extend(margin_insights)
+            
+            # 3. Balance Sheet Analysis
+            if financial_data.get("balance_sheet"):
+                balance_sheet_data = financial_data["balance_sheet"]
+                balance_insights = self._analyze_balance_sheet_strength(
+                    balance_sheet_data, document_metrics, analysis["quarter_context"]
+                )
+                analysis["balance_sheet_insights"].extend(balance_insights)
+            
+            # 4. Cash Flow Analysis
+            if financial_data.get("cash_flow"):
+                cash_flow_data = financial_data["cash_flow"]
+                cash_insights = self._analyze_cash_flow_health(
+                    cash_flow_data, document_metrics, analysis["quarter_context"]
+                )
+                analysis["cash_flow_insights"].extend(cash_insights)
+            
+            # 5. Segment Performance Analysis
+            if document_metrics.get("segments") and financial_data.get("income_statement", {}).get("segment_performance"):
+                segment_insights = self._analyze_segment_performance(
+                    document_metrics["segments"], 
+                    financial_data["income_statement"]["segment_performance"]
+                )
+                analysis["segment_comparison"].extend(segment_insights)
+            
+            # 6. Growth Trends Analysis
+            if financial_data.get("comparative_analysis"):
+                growth_insights = self._analyze_growth_trends(
+                    document_metrics, financial_data["comparative_analysis"]
+                )
+                analysis["growth_analysis"].extend(growth_insights)
+            
+            logger.info(f"Comprehensive financial analysis completed for {ticker} with {len(available_statements)} data sources")
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Failed to perform comprehensive financial analysis for {ticker}: {str(e)}")
+            # Return basic structure on error
+            analysis["has_comprehensive_data"] = False
+            return analysis
+    
     def _perform_comparative_analysis(self, ticker: str, document_metrics: Dict, 
                                     estimates_data: Dict, document_date: Optional[datetime]) -> Dict:
-        """Perform comparative analysis between document metrics and estimates data"""
+        """Perform comparative analysis between document metrics and estimates data (legacy method)"""
         analysis = {
             "revenue_comparison": [],
             "margin_comparison": [],
@@ -563,6 +671,222 @@ class DocumentProcessingService:
                 comparisons.append(comparison)
         
         return comparisons
+
+    # Helper methods for comprehensive financial analysis
+    def _analyze_revenue_performance(self, document_revenue: Dict, income_data: Dict, quarter_context: str) -> List[Dict]:
+        """Analyze revenue performance against income statement data"""
+        insights = []
+        
+        try:
+            # Compare document revenue metrics with income statement data
+            if income_data.get("revenue_metrics") or income_data.get("financial_metrics"):
+                revenue_data = income_data.get("revenue_metrics", income_data.get("financial_metrics", {}))
+                
+                for rev_key, rev_data in document_revenue.items():
+                    if isinstance(rev_data, dict) and rev_data.get("value"):
+                        insight = {
+                            "metric": rev_key.replace("_", " ").title(),
+                            "document_value": rev_data.get("raw_text", str(rev_data.get("value"))),
+                            "context": quarter_context,
+                            "analysis_type": "revenue_comparison",
+                            "source": "Document vs Income Statement"
+                        }
+                        
+                        # Look for comparable values in income statement
+                        comparable_found = False
+                        for income_key, income_val in revenue_data.items():
+                            if any(term in income_key.lower() for term in ["revenue", "sales", "income"]):
+                                if any(term in rev_key.lower() for term in ["revenue", "sales", "total"]):
+                                    insight["financial_statement_reference"] = f"{income_key}: {income_val}"
+                                    comparable_found = True
+                                    break
+                        
+                        if not comparable_found:
+                            insight["financial_statement_reference"] = "Available for detailed comparison"
+                        
+                        insights.append(insight)
+                        
+        except Exception as e:
+            logger.warning(f"Error analyzing revenue performance: {str(e)}")
+            
+        return insights
+    
+    def _analyze_profitability_trends(self, document_margins: Dict, financial_metrics: Dict) -> List[Dict]:
+        """Analyze profitability trends using margin data"""
+        insights = []
+        
+        try:
+            for margin_key, margin_data in document_margins.items():
+                if isinstance(margin_data, dict) and margin_data.get("value"):
+                    insight = {
+                        "metric": margin_key.replace("_", " ").title(),
+                        "document_value": margin_data.get("raw_text", f"{margin_data.get('value')}%"),
+                        "analysis_type": "profitability_analysis",
+                        "source": "Document vs Financial Metrics"
+                    }
+                    
+                    # Look for comparable profitability metrics
+                    for metric_key, metric_val in financial_metrics.items():
+                        if any(term in metric_key.lower() for term in ["margin", "profit", "operating"]):
+                            if any(term in margin_key.lower() for term in ["margin", "profit", "operating"]):
+                                insight["financial_reference"] = f"{metric_key}: {metric_val}"
+                                break
+                    
+                    insights.append(insight)
+                    
+        except Exception as e:
+            logger.warning(f"Error analyzing profitability trends: {str(e)}")
+            
+        return insights
+    
+    def _analyze_margin_performance(self, document_margins: Dict, margin_analysis: Dict) -> List[Dict]:
+        """Analyze margin performance using dedicated margin analysis data"""
+        insights = []
+        
+        try:
+            if margin_analysis.get("margin_trends") or margin_analysis.get("financial_metrics"):
+                margin_data = margin_analysis.get("margin_trends", margin_analysis.get("financial_metrics", {}))
+                
+                for doc_margin_key, doc_margin_data in document_margins.items():
+                    if isinstance(doc_margin_data, dict) and doc_margin_data.get("value"):
+                        insight = {
+                            "metric": doc_margin_key.replace("_", " ").title(),
+                            "document_value": doc_margin_data.get("raw_text", f"{doc_margin_data.get('value')}%"),
+                            "analysis_type": "margin_analysis",
+                            "source": "Document vs Margin Analysis"
+                        }
+                        
+                        # Find comparable margin metrics
+                        for margin_key, margin_val in margin_data.items():
+                            if any(term in margin_key.lower() for term in ["margin", "profitability"]):
+                                if any(term in doc_margin_key.lower() for term in ["margin", "gross", "operating", "net"]):
+                                    insight["margin_analysis_reference"] = f"{margin_key}: {margin_val}"
+                                    break
+                        
+                        insights.append(insight)
+                        
+        except Exception as e:
+            logger.warning(f"Error analyzing margin performance: {str(e)}")
+            
+        return insights
+    
+    def _analyze_balance_sheet_strength(self, balance_sheet_data: Dict, document_metrics: Dict, quarter_context: str) -> List[Dict]:
+        """Analyze balance sheet strength indicators"""
+        insights = []
+        
+        try:
+            # Key balance sheet metrics to analyze
+            key_metrics = ["assets", "liabilities", "equity", "cash", "debt"]
+            
+            for metric in key_metrics:
+                if balance_sheet_data.get(f"{metric}_analysis") or balance_sheet_data.get("financial_metrics"):
+                    insight = {
+                        "metric": f"Balance Sheet {metric.title()}",
+                        "analysis_type": "balance_sheet_analysis",
+                        "quarter_context": quarter_context,
+                        "source": "Balance Sheet Analysis"
+                    }
+                    
+                    # Add relevant balance sheet data
+                    bs_metrics = balance_sheet_data.get("financial_metrics", {})
+                    relevant_data = {k: v for k, v in bs_metrics.items() 
+                                   if metric.lower() in k.lower()}
+                    
+                    if relevant_data:
+                        insight["balance_sheet_data"] = str(relevant_data)
+                    else:
+                        insight["balance_sheet_data"] = f"{metric.title()} data available for analysis"
+                    
+                    insights.append(insight)
+                    
+        except Exception as e:
+            logger.warning(f"Error analyzing balance sheet strength: {str(e)}")
+            
+        return insights
+    
+    def _analyze_cash_flow_health(self, cash_flow_data: Dict, document_metrics: Dict, quarter_context: str) -> List[Dict]:
+        """Analyze cash flow health indicators"""
+        insights = []
+        
+        try:
+            # Key cash flow categories
+            flow_types = ["operating", "investing", "financing"]
+            
+            for flow_type in flow_types:
+                if cash_flow_data.get(f"{flow_type}_cash_flow") or cash_flow_data.get("financial_metrics"):
+                    insight = {
+                        "metric": f"{flow_type.title()} Cash Flow",
+                        "analysis_type": "cash_flow_analysis", 
+                        "quarter_context": quarter_context,
+                        "source": "Cash Flow Analysis"
+                    }
+                    
+                    # Add relevant cash flow data
+                    cf_metrics = cash_flow_data.get("financial_metrics", {})
+                    relevant_data = {k: v for k, v in cf_metrics.items() 
+                                   if flow_type.lower() in k.lower() or "cash" in k.lower()}
+                    
+                    if relevant_data:
+                        insight["cash_flow_data"] = str(relevant_data)
+                    else:
+                        insight["cash_flow_data"] = f"{flow_type.title()} cash flow data available"
+                    
+                    insights.append(insight)
+                    
+        except Exception as e:
+            logger.warning(f"Error analyzing cash flow health: {str(e)}")
+            
+        return insights
+    
+    def _analyze_segment_performance(self, document_segments: Dict, segment_performance: Dict) -> List[Dict]:
+        """Analyze segment performance comparison"""
+        insights = []
+        
+        try:
+            for seg_key, seg_data in document_segments.items():
+                if isinstance(seg_data, dict):
+                    insight = {
+                        "segment": seg_key.replace("_", " ").title(),
+                        "document_data": seg_data,
+                        "analysis_type": "segment_comparison",
+                        "source": "Document vs Segment Analysis"
+                    }
+                    
+                    # Look for comparable segment data
+                    for perf_key, perf_data in segment_performance.items():
+                        if any(term in perf_key.lower() for term in seg_key.lower().split()):
+                            insight["segment_reference"] = {perf_key: perf_data}
+                            break
+                    
+                    insights.append(insight)
+                    
+        except Exception as e:
+            logger.warning(f"Error analyzing segment performance: {str(e)}")
+            
+        return insights
+    
+    def _analyze_growth_trends(self, document_metrics: Dict, comparative_analysis: Dict) -> List[Dict]:
+        """Analyze growth trends using comparative analysis data"""
+        insights = []
+        
+        try:
+            growth_areas = ["revenue", "margins", "segments"]
+            
+            for area in growth_areas:
+                if document_metrics.get(area) and comparative_analysis.get(f"{area}_trends"):
+                    insight = {
+                        "growth_area": area.title(),
+                        "document_data": str(document_metrics[area]),
+                        "trend_analysis": comparative_analysis[f"{area}_trends"],
+                        "analysis_type": "growth_analysis",
+                        "source": "Document vs Comparative Analysis"
+                    }
+                    insights.append(insight)
+                    
+        except Exception as e:
+            logger.warning(f"Error analyzing growth trends: {str(e)}")
+            
+        return insights
     
     def _compare_margins_with_estimates(self, document_margins: Dict, estimates_margins: Dict) -> List[Dict]:
         """Compare actual margins with estimates"""

@@ -10,13 +10,9 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider,
-  Alert,
   Button,
   Collapse,
-  IconButton,
-  Grid,
-  CircularProgress
+  IconButton
 } from '@mui/material';
 import {
   CheckCircle,
@@ -93,57 +89,260 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
     return new Date(dateString).toLocaleString();
   };
 
-  // Component to render markdown content with proper styling
-  const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => (
-    <ReactMarkdown
-      components={{
-        // Override default components for better styling
-        p: ({ children }) => <Typography variant="body1" paragraph>{children}</Typography>,
-        h1: ({ children }) => <Typography variant="h4" gutterBottom>{children}</Typography>,
-        h2: ({ children }) => <Typography variant="h5" gutterBottom>{children}</Typography>,
-        h3: ({ children }) => <Typography variant="h6" gutterBottom>{children}</Typography>,
-        ul: ({ children }) => <List dense>{children}</List>,
-        ol: ({ children }) => <List dense>{children}</List>,
-        li: ({ children }) => (
-          <ListItem disablePadding>
-            <ListItemText primary={children} sx={{ ml: 1 }} />
-          </ListItem>
-        ),
-        strong: ({ children }) => <Typography component="span" fontWeight="bold">{children}</Typography>,
-        em: ({ children }) => <Typography component="span" fontStyle="italic">{children}</Typography>,
-        code: ({ children }) => (
-          <Typography 
-            component="code" 
-            sx={{ 
-              bgcolor: 'grey.100', 
-              px: 0.5, 
-              py: 0.25, 
-              borderRadius: 0.5, 
-              fontFamily: 'monospace',
-              fontSize: '0.9em'
-            }}
-          >
-            {children}
-          </Typography>
-        ),
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  );
+  // Helper function to detect and parse markdown tables
+  const parseMarkdownTables = (content: string) => {
+    // Primary regex for well-formed tables with separator row
+    const tableRegex = /\|(.+)\|\s*\n\|[-\s|:]+\|\s*\n((?:\|.+\|\s*\n?)*)/g;
+    
+    // Fallback regex for tables without proper separator (just consecutive pipe rows)
+    const simpleTableRegex = /(\|.+\|\s*\n){2,}/g;
+    
+    const parts: Array<{
+      type: 'text' | 'table';
+      content?: string;
+      headers?: string[];
+      rows?: string[][];
+    }> = [];
+    let lastIndex = 0;
+    let match;
 
-  // Component to render markdown arrays (like key_changes, new_insights)
-  const MarkdownArrayRenderer: React.FC<{ items: string[] }> = ({ items }) => (
-    <List dense>
-      {items.map((item, index) => (
-        <ListItem key={index} disablePadding>
-          <Box sx={{ ml: 1, width: '100%' }}>
-            <MarkdownRenderer content={item} />
-          </Box>
-        </ListItem>
-      ))}
-    </List>
-  );
+    // First try the standard table format
+    while ((match = tableRegex.exec(content)) !== null) {
+      // Add content before the table
+      if (match.index > lastIndex) {
+        parts.push({
+          type: 'text',
+          content: content.slice(lastIndex, match.index)
+        });
+      }
+
+      // Parse the table
+      const headerRow = match[1];
+      const dataRows = match[2];
+      
+      const headers = headerRow.split('|').map(h => h.trim()).filter(h => h);
+      const rows = dataRows.trim().split('\n').map(row => 
+        row.split('|').map(cell => cell.trim()).filter(cell => cell)
+      );
+
+      parts.push({
+        type: 'table',
+        headers,
+        rows
+      });
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // If no standard tables found, try simple table format
+    if (parts.filter(p => p.type === 'table').length === 0) {
+      lastIndex = 0;
+      const simpleMatches = Array.from(content.matchAll(simpleTableRegex));
+      
+      for (const match of simpleMatches) {
+        // Add content before the table
+        if (match.index !== undefined && match.index > lastIndex) {
+          parts.push({
+            type: 'text',
+            content: content.slice(lastIndex, match.index)
+          });
+        }
+
+        // Parse simple table (first row as headers, rest as data)
+        const tableLines = match[0].trim().split('\n');
+        if (tableLines.length >= 2) {
+          const headers = tableLines[0].split('|').map(h => h.trim()).filter(h => h);
+          const rows = tableLines.slice(1).map(row => 
+            row.split('|').map(cell => cell.trim()).filter(cell => cell)
+          );
+
+          parts.push({
+            type: 'table',
+            headers,
+            rows
+          });
+        }
+
+        lastIndex = (match.index || 0) + match[0].length;
+      }
+    }
+
+    // Add remaining content
+    if (lastIndex < content.length) {
+      parts.push({
+        type: 'text',
+        content: content.slice(lastIndex)
+      });
+    }
+
+    return parts;
+  };
+
+  // Component to render markdown content with proper styling
+  const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
+    // Parse content for tables
+    const parsedContent = parseMarkdownTables(content);
+    
+    return (
+      <Box>
+        {parsedContent.map((part, index) => {
+          if (part.type === 'table' && part.headers && part.rows) {
+            return (
+              <Box key={index} sx={{ overflowX: 'auto', mb: 2 }}>
+                <table style={{ 
+                  width: '100%', 
+                  borderCollapse: 'collapse',
+                  border: '1px solid #e0e0e0'
+                }}>
+                  <thead style={{ backgroundColor: '#f5f5f5' }}>
+                    <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+                      {part.headers.map((header, headerIndex) => (
+                        <th key={headerIndex} style={{ 
+                          padding: '8px 12px', 
+                          textAlign: 'left', 
+                          fontWeight: 'bold',
+                          borderRight: '1px solid #e0e0e0'
+                        }}>
+                          <Typography variant="body2" fontWeight="bold">
+                            {header}
+                          </Typography>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {part.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} style={{ 
+                            padding: '8px 12px', 
+                            borderRight: '1px solid #e0e0e0',
+                            verticalAlign: 'top'
+                          }}>
+                            <Typography variant="body2">
+                              {cell}
+                            </Typography>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Box>
+            );
+          } else if (part.content) {
+            // Render regular markdown for non-table content
+            return (
+              <ReactMarkdown
+                key={index}
+                components={{
+                  p: ({ children }) => <Typography variant="body1" paragraph>{children}</Typography>,
+                  h1: ({ children }) => <Typography variant="h4" gutterBottom>{children}</Typography>,
+                  h2: ({ children }) => <Typography variant="h5" gutterBottom>{children}</Typography>,
+                  h3: ({ children }) => <Typography variant="h6" gutterBottom>{children}</Typography>,
+                  ul: ({ children }) => <List dense>{children}</List>,
+                  ol: ({ children }) => <List dense>{children}</List>,
+                  li: ({ children }) => (
+                    <ListItem disablePadding>
+                      <ListItemText primary={children} sx={{ ml: 1 }} />
+                    </ListItem>
+                  ),
+                  strong: ({ children }) => <Typography component="span" fontWeight="bold">{children}</Typography>,
+                  em: ({ children }) => <Typography component="span" fontStyle="italic">{children}</Typography>,
+                  code: ({ children }) => (
+                    <Typography 
+                      component="code" 
+                      sx={{ 
+                        bgcolor: 'grey.100', 
+                        px: 0.5, 
+                        py: 0.25, 
+                        borderRadius: 0.5, 
+                        fontFamily: 'monospace',
+                        fontSize: '0.9em'
+                      }}
+                    >
+                      {children}
+                    </Typography>
+                  ),
+                }}
+              >
+                {part.content}
+              </ReactMarkdown>
+            );
+          }
+          return null;
+        })}
+      </Box>
+    );
+  };
+
+  // Enhanced component to render markdown arrays with table detection
+  const MarkdownArrayRenderer: React.FC<{ items: string[] }> = ({ items }) => {
+    // Check if the array contains table data
+    const hasTableData = items.some(item => item.trim().startsWith('|') && item.includes('|'));
+    
+    if (hasTableData) {
+      // Reconstruct table from array elements
+      const tableRows: string[] = [];
+      const nonTableItems: string[] = [];
+      let currentTableBlock: string[] = [];
+      
+      for (const item of items) {
+        if (item.trim().startsWith('|') && item.includes('|')) {
+          currentTableBlock.push(item);
+        } else {
+          // If we have accumulated table rows, join them and add to tableRows
+          if (currentTableBlock.length > 0) {
+            tableRows.push(currentTableBlock.join('\n'));
+            currentTableBlock = [];
+          }
+          nonTableItems.push(item);
+        }
+      }
+      
+      // Add any remaining table block
+      if (currentTableBlock.length > 0) {
+        tableRows.push(currentTableBlock.join('\n'));
+      }
+      
+      return (
+        <Box>
+          {/* Render reconstructed tables */}
+          {tableRows.map((tableContent, tableIndex) => (
+            <Box key={`table-${tableIndex}`} sx={{ mb: 2 }}>
+              <MarkdownRenderer content={tableContent} />
+            </Box>
+          ))}
+          
+          {/* Render non-table items as list */}
+          {nonTableItems.length > 0 && (
+            <List dense>
+              {nonTableItems.map((item, index) => (
+                <ListItem key={`text-${index}`} disablePadding>
+                  <Box sx={{ ml: 1, width: '100%' }}>
+                    <MarkdownRenderer content={item} />
+                  </Box>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Box>
+      );
+    }
+    
+    // Fallback to original list rendering for non-table arrays
+    return (
+      <List dense>
+        {items.map((item, index) => (
+          <ListItem key={index} disablePadding>
+            <Box sx={{ ml: 1, width: '100%' }}>
+              <MarkdownRenderer content={item} />
+            </Box>
+          </ListItem>
+        ))}
+      </List>
+    );
+  };
 
   return (
     <Card elevation={3} sx={{ maxWidth: '100%', mb: 3 }}>
@@ -340,6 +539,22 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
               </Paper>
             )}
 
+            {/* Analyst Estimates Comparison - New Section */}
+            {analysis.analysis.analyst_estimates_comparison && analysis.analysis.analyst_estimates_comparison.length > 0 && (
+              <Paper sx={{ p: 2, mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  <Timeline sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  Analyst Estimates vs Actuals Comparison
+                </Typography>
+                <MarkdownArrayRenderer items={analysis.analysis.analyst_estimates_comparison} />
+                <Paper sx={{ p: 1, mt: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+                  <Typography variant="body2">
+                    <strong>Beat/Miss Analysis:</strong> This section provides detailed comparison of actual reported numbers against analyst estimates with quantified variances and investment implications.
+                  </Typography>
+                </Paper>
+              </Paper>
+            )}
+
             {/* Comparative Analysis Section */}
             {hasComparativeAnalysis() && (
               <Paper sx={{ p: 2, mb: 2, bgcolor: 'background.paper' }}>
@@ -495,11 +710,29 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
 
             {/* Estimates Comparison Indicator */}
             {hasComparativeAnalysis() && (
-              <Alert severity="success" sx={{ mb: 2 }}>
-                <Typography>
+              <Paper sx={{ p: 1, mb: 2, bgcolor: 'success.light', color: 'success.contrastText' }}>
+                <Typography variant="body2">
                   ✓ This analysis includes comparison with estimates data from the knowledge base
                 </Typography>
-              </Alert>
+              </Paper>
+            )}
+
+            {/* Enhanced Analyst Estimates Indicator */}
+            {analysis.generation_metadata?.analyst_estimates_included && (
+              <Paper sx={{ p: 1, mb: 2, bgcolor: 'info.light', color: 'info.contrastText', display: 'flex', alignItems: 'center' }}>
+                <Timeline sx={{ mr: 1 }} />
+                <div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                    ✨ Enhanced Analysis with Current Quarter Analyst Estimates
+                  </div>
+                  <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
+                    This analysis includes comprehensive comparison against {' '}
+                    {analysis.generation_metadata.analyst_estimates_length ? 
+                      `${Math.round(analysis.generation_metadata.analyst_estimates_length / 100)} analyst metrics` : 
+                      'current analyst estimates'} for beat/miss analysis and investment implications.
+                  </div>
+                </div>
+              </Paper>
             )}
           </Box>
         )}
@@ -507,7 +740,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
         {/* Generation Metadata */}
         {analysis.generation_metadata && (
           <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
               <Typography variant="h6">
                 <Settings sx={{ verticalAlign: 'middle', mr: 1 }} />
                 Analysis Generation Details
@@ -524,34 +757,73 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
               </IconButton>
             </Box>
             
-            <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={6} sm={4}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Model</Typography>
                 <Typography variant="body1">{analysis.generation_metadata.model}</Typography>
-              </Grid>
-              <Grid item xs={6} sm={4}>
+              </Box>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Analysis Type</Typography>
                 <Typography variant="body1">{analysis.generation_metadata.analysis_type}</Typography>
-              </Grid>
-              <Grid item xs={6} sm={4}>
+              </Box>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Context Documents</Typography>
                 <Typography variant="body1">{analysis.generation_metadata.context_documents_count}</Typography>
-              </Grid>
-              <Grid item xs={6} sm={4}>
+              </Box>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Temperature</Typography>
                 <Typography variant="body1">{analysis.generation_metadata.temperature}</Typography>
-              </Grid>
-              <Grid item xs={6} sm={4}>
+              </Box>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Max Tokens</Typography>
                 <Typography variant="body1">{analysis.generation_metadata.max_tokens}</Typography>
-              </Grid>
-              <Grid item xs={6} sm={4}>
+              </Box>
+              <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Generated</Typography>
                 <Typography variant="body1">
                   {formatDate(analysis.generation_metadata.generation_timestamp)}
                 </Typography>
-              </Grid>
-            </Grid>
+              </Box>
+              {analysis.generation_metadata.analyst_estimates_included !== undefined && (
+                <Box sx={{ minWidth: 150 }}>
+                  <Typography variant="body2" color="textSecondary">Analyst Estimates</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body1">
+                      {analysis.generation_metadata.analyst_estimates_included ? 'Included' : 'Not Available'}
+                    </Typography>
+                    {analysis.generation_metadata.analyst_estimates_included && (
+                      <Chip 
+                        label="Enhanced" 
+                        size="small" 
+                        color="primary" 
+                        variant="outlined"
+                      />
+                    )}
+                  </Box>
+                </Box>
+              )}
+              {analysis.generation_metadata.analyst_estimates_length && analysis.generation_metadata.analyst_estimates_length > 0 && (
+                <Box sx={{ minWidth: 150 }}>
+                  <Typography variant="body2" color="textSecondary">Estimates Data Size</Typography>
+                  <Typography variant="body1">
+                    {analysis.generation_metadata.analyst_estimates_length.toLocaleString()} chars
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+
+            {/* Analysis Generation Details Text */}
+            {analysis.analysis.analysis_generation_details && (
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'primary.light', borderRadius: 1 }}>
+                <Typography variant="subtitle2" gutterBottom sx={{ color: 'primary.contrastText' }}>
+                  <Insights sx={{ verticalAlign: 'middle', mr: 1 }} />
+                  How This Analysis Was Generated
+                </Typography>
+                <Box sx={{ color: 'primary.contrastText' }}>
+                  <MarkdownRenderer content={analysis.analysis.analysis_generation_details} />
+                </Box>
+              </Box>
+            )}
 
             <Collapse in={showPrompt}>
               <Box sx={{ mt: 2 }}>
@@ -611,15 +883,19 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
         )}
 
         {analysis.status === 'analysis_ready' && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            <Typography>Analysis is complete and ready for review. This analysis will be used for report generation.</Typography>
-          </Alert>
+          <Paper sx={{ p: 1, mt: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            <Typography variant="body2">
+              Analysis is complete and ready for review. This analysis will be used for report generation.
+            </Typography>
+          </Paper>
         )}
         
         {analysis.status === 'analysis_approved' && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            <Typography>Analysis has been approved and is ready for report generation.</Typography>
-          </Alert>
+          <Paper sx={{ p: 1, mt: 2, bgcolor: 'success.light', color: 'success.contrastText' }}>
+            <Typography variant="body2">
+              Analysis has been approved and is ready for report generation.
+            </Typography>
+          </Paper>
         )}
       </CardContent>
     </Card>

@@ -34,9 +34,10 @@ class SVGFinancialParser:
         estimates_path = os.path.join(self.config.DATA_ROOT_PATH, "research", ticker.upper(), "estimates")
         
         if not os.path.exists(estimates_path):
-            logger.warning(f"Estimates folder not found for {ticker}: {estimates_path}")
+            logger.warning(f"[SVG_PARSER][{ticker}] Estimates folder not found: {estimates_path}")
             return {}
         
+        logger.info(f"[SVG_PARSER][{ticker}] Starting parse of estimates folder: {estimates_path}")
         estimates_data = {
             'ticker': ticker,
             'last_updated': None,
@@ -46,27 +47,42 @@ class SVGFinancialParser:
         }
         
         # Parse each financial statement
-        for filename in os.listdir(estimates_path):
-            if filename.endswith('.svg'):
-                file_path = os.path.join(estimates_path, filename)
-                
-                try:
-                    if 'BalanceSheet' in filename:
-                        estimates_data['balance_sheet'] = self._parse_svg_file(file_path, 'balance_sheet')
-                    elif 'CashFlow' in filename:
-                        estimates_data['cash_flow'] = self._parse_svg_file(file_path, 'cash_flow')
-                    elif 'IncomeStatement' in filename:
-                        estimates_data['income_statement'] = self._parse_svg_file(file_path, 'income_statement')
-                        
-                    # Update last modified time
-                    file_mtime = os.path.getmtime(file_path)
-                    if not estimates_data['last_updated'] or file_mtime > estimates_data['last_updated']:
-                        estimates_data['last_updated'] = file_mtime
-                        
-                except Exception as e:
-                    logger.error(f"Error parsing {filename}: {str(e)}")
-                    continue
+        svg_files = [f for f in os.listdir(estimates_path) if f.endswith('.svg')]
+        logger.info(f"[SVG_PARSER][{ticker}] Found {len(svg_files)} SVG files: {svg_files}")
         
+        for filename in svg_files:
+            file_path = os.path.join(estimates_path, filename)
+            
+            try:
+                logger.debug(f"[SVG_PARSER][{ticker}] Processing file: {filename}")
+                if 'BalanceSheet' in filename:
+                    estimates_data['balance_sheet'] = self._parse_svg_file(file_path, 'balance_sheet')
+                elif 'CashFlow' in filename:
+                    estimates_data['cash_flow'] = self._parse_svg_file(file_path, 'cash_flow')
+                elif 'IncomeStatement' in filename:
+                    estimates_data['income_statement'] = self._parse_svg_file(file_path, 'income_statement')
+                    
+                # Update last modified time
+                file_mtime = os.path.getmtime(file_path)
+                if not estimates_data['last_updated'] or file_mtime > estimates_data['last_updated']:
+                    estimates_data['last_updated'] = file_mtime
+                    
+                logger.debug(f"[SVG_PARSER][{ticker}] Successfully parsed {filename} (mtime: {file_mtime})")
+                    
+            except Exception as e:
+                logger.error(f"[SVG_PARSER][{ticker}] Error parsing {filename}: {str(e)}")
+                continue
+        
+        # Log summary of parsed data
+        for statement_type in ['income_statement', 'balance_sheet', 'cash_flow']:
+            statement_data = estimates_data.get(statement_type, {})
+            if isinstance(statement_data, dict):
+                segments = len(statement_data.get('segment_data', {}))
+                margins = len(statement_data.get('margins', {}))
+                quarterly = len(statement_data.get('quarterly_data', []))
+                logger.info(f"[SVG_PARSER][{ticker}] {statement_type}: {segments} segments, {margins} margins, {quarterly} quarterly entries")
+        
+        logger.info(f"[SVG_PARSER][{ticker}] Completed parsing. Last updated: {estimates_data.get('last_updated')}")
         return estimates_data
     
     def _parse_svg_file(self, file_path: str, statement_type: str) -> Dict[str, Any]:
@@ -81,30 +97,39 @@ class SVGFinancialParser:
             Dictionary containing extracted financial data
         """
         try:
+            logger.debug(f"[SVG_PARSER] Parsing SVG file: {os.path.basename(file_path)} ({statement_type})")
             # Parse SVG XML
             tree = ET.parse(file_path)
             root = tree.getroot()
             
             # Extract all text elements
             text_elements = self._extract_text_elements(root)
+            logger.debug(f"[SVG_PARSER] Extracted {len(text_elements)} text elements from {os.path.basename(file_path)}")
             
             # Parse based on statement type
             if statement_type == 'income_statement':
-                return self._parse_income_statement(text_elements)
+                result = self._parse_income_statement(text_elements)
             elif statement_type == 'balance_sheet':
-                return self._parse_balance_sheet(text_elements)
+                result = self._parse_balance_sheet(text_elements)
             elif statement_type == 'cash_flow':
-                return self._parse_cash_flow(text_elements)
+                result = self._parse_cash_flow(text_elements)
+            else:
+                logger.warning(f"[SVG_PARSER] Unknown statement type: {statement_type}")
+                return {}
             
-            return {}
+            logger.debug(f"[SVG_PARSER] Completed parsing {os.path.basename(file_path)} ({statement_type})")
+            return result
             
         except Exception as e:
-            logger.error(f"Error parsing SVG file {file_path}: {str(e)}")
+            logger.error(f"[SVG_PARSER] Error parsing SVG file {file_path}: {str(e)}")
             return {}
     
     def _extract_text_elements(self, root) -> List[Dict[str, Any]]:
         """Extract all text elements from SVG with their positions and content."""
         text_elements = []
+        element_count = 0
+        
+        logger.debug("[SVG_PARSER] Starting text element extraction")
         
         # Find all text elements
         for text_elem in root.iter('{http://www.w3.org/2000/svg}text'):
@@ -129,9 +154,18 @@ class SVGFinancialParser:
                     'is_currency': '$' in content,
                     'is_number': self._is_numeric_value(content)
                 })
+                element_count += 1
+        
+        logger.debug(f"[SVG_PARSER] Extracted {element_count} text elements")
         
         # Sort by vertical position (y coordinate) to maintain reading order
         text_elements.sort(key=lambda x: (-x['position']['y'], x['position']['x']))
+        
+        # Log sample of extracted elements
+        if text_elements:
+            sample_size = min(5, len(text_elements))
+            sample_contents = [elem['content'][:20] for elem in text_elements[:sample_size]]
+            logger.debug(f"[SVG_PARSER] Sample elements: {sample_contents}")
         
         return text_elements
     
@@ -158,6 +192,8 @@ class SVGFinancialParser:
     
     def _parse_income_statement(self, text_elements: List[Dict]) -> Dict[str, Any]:
         """Parse income statement data from text elements."""
+        logger.debug(f"[SVG_PARSER] Parsing income statement from {len(text_elements)} text elements")
+        
         data = {
             'revenue': {},
             'gross_profit': {},
@@ -168,6 +204,10 @@ class SVGFinancialParser:
             'quarterly_data': [],
             'estimates': {}
         }
+        
+        segments_found = 0
+        margins_found = 0
+        quarterly_found = 0
         
         # Look for key financial metrics and segment data
         for i, element in enumerate(text_elements):
@@ -180,23 +220,32 @@ class SVGFinancialParser:
                 segment_values = self._find_nearby_values(text_elements, i, segment_name)
                 if segment_values:
                     data['segment_data'][segment_name] = segment_values
+                    segments_found += 1
+                    logger.debug(f"[SVG_PARSER] Found segment: {segment_name}")
             
             # Identify margin data
             elif 'gross margin' in content:
                 margin_values = self._find_nearby_values(text_elements, i, 'Gross Margin')
                 if margin_values:
                     data['margins']['gross_margin'] = margin_values
+                    margins_found += 1
+                    logger.debug(f"[SVG_PARSER] Found gross margin data")
             
             # Look for quarterly patterns or estimates
             elif self._is_quarterly_indicator(content):
                 quarterly_info = self._extract_quarterly_data(text_elements, i)
                 if quarterly_info:
                     data['quarterly_data'].append(quarterly_info)
+                    quarterly_found += 1
+                    logger.debug(f"[SVG_PARSER] Found quarterly data: {content}")
         
+        logger.info(f"[SVG_PARSER] Income statement parsed: {segments_found} segments, {margins_found} margins, {quarterly_found} quarterly entries")
         return data
     
     def _parse_balance_sheet(self, text_elements: List[Dict]) -> Dict[str, Any]:
         """Parse balance sheet data from text elements."""
+        logger.debug(f"[SVG_PARSER] Parsing balance sheet from {len(text_elements)} text elements")
+        
         data = {
             'assets': {},
             'liabilities': {},
@@ -208,10 +257,13 @@ class SVGFinancialParser:
         # Implementation similar to income statement but for balance sheet metrics
         # This would identify key balance sheet items like cash, receivables, inventory, etc.
         
+        logger.debug("[SVG_PARSER] Balance sheet parsing completed (placeholder implementation)")
         return data
     
     def _parse_cash_flow(self, text_elements: List[Dict]) -> Dict[str, Any]:
         """Parse cash flow statement data from text elements."""
+        logger.debug(f"[SVG_PARSER] Parsing cash flow from {len(text_elements)} text elements")
+        
         data = {
             'operating_cash_flow': {},
             'investing_cash_flow': {},
@@ -223,6 +275,7 @@ class SVGFinancialParser:
         
         # Implementation for cash flow specific metrics
         
+        logger.debug("[SVG_PARSER] Cash flow parsing completed (placeholder implementation)")
         return data
     
     def _find_nearby_values(self, text_elements: List[Dict], center_index: int, label: str) -> Dict[str, Any]:
@@ -237,6 +290,7 @@ class SVGFinancialParser:
         y_position = text_elements[center_index]['position']['y']
         tolerance = 10  # Y-position tolerance for same row
         
+        values_found = 0
         for i in range(center_index + 1, min(center_index + 20, len(text_elements))):
             element = text_elements[i]
             
@@ -254,9 +308,13 @@ class SVGFinancialParser:
                             'value': element['content'],
                             'position': element['position']
                         })
+                    values_found += 1
             elif element['position']['y'] < y_position - tolerance:
                 # Moved to next row, stop searching
                 break
+        
+        if values_found > 0:
+            logger.debug(f"[SVG_PARSER] Found {values_found} values for label '{label}': {len(values['actuals'])} actuals, {len(values['estimates'])} estimates")
         
         return values if values['actuals'] or values['estimates'] else {}
     

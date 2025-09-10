@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional
 import logging
-from .estimates_parser import create_estimates_parser
+from .enhanced_svg_parser import create_enhanced_financial_parser
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class KnowledgeBaseService:
         self.config = config
         self.db_service = database_service
         self.doc_service = document_service
-        self.estimates_parser = create_estimates_parser(config)
+        self.financial_parser = create_enhanced_financial_parser(config)
     
     def refresh_knowledge_base(self, ticker: str, force_reprocess: bool = False, 
                               include_investment_data: bool = True, include_estimates: bool = True) -> Dict:
@@ -28,7 +28,7 @@ class KnowledgeBaseService:
                     "past_reports": [],
                     "investment_data": [],
                     "uploaded_documents": [],
-                    "estimates_data": []
+                    "financial_statements": []
                 },
                 "statistics": {
                     "total_chunks": 0,
@@ -44,10 +44,10 @@ class KnowledgeBaseService:
             if include_investment_data:
                 investment_processed = self._process_investment_data(ticker, current_state)
                 
-            # Process estimates data if requested
-            estimates_processed = 0
+            # Process financial data if requested
+            financial_processed = 0
             if include_estimates:
-                estimates_processed = self._process_estimates_data(ticker, current_state, force_reprocess)
+                financial_processed = self._process_financial_data(ticker, current_state, force_reprocess)
             
             # Update statistics
             stats = self.db_service.get_company_stats(ticker)
@@ -60,7 +60,7 @@ class KnowledgeBaseService:
                 "status": "completed",
                 "reports_processed": reports_processed,
                 "investment_data_processed": investment_processed,
-                "estimates_processed": estimates_processed,
+                "financial_statements_processed": financial_processed,
                 "total_documents": stats.get("total_documents", 0)
             }
             
@@ -417,170 +417,784 @@ class KnowledgeBaseService:
         
         return min(base_priority, 1.0)
     
-    def _process_estimates_data(self, ticker: str, state: Dict, force_reprocess: bool = False) -> int:
-        """Process estimates data from SVG files for a company"""
+    def _process_financial_data(self, ticker: str, state: Dict, force_reprocess: bool = False) -> int:
+        """Process comprehensive financial data from SVG files for a company"""
         try:
-            logger.info(f"Processing estimates data for {ticker}")
+            logger.info(f"Processing financial statements for {ticker}")
             
-            # Parse estimates data from SVG files
-            estimates_data = self.estimates_parser.parse_estimates_folder(ticker)
+            # Parse comprehensive financial data using enhanced parser
+            financial_data = self.financial_parser.parse_financial_statements(ticker)
             
-            if not estimates_data or not estimates_data.get('last_updated'):
-                logger.warning(f"No estimates data found for {ticker}")
+            if not financial_data or not financial_data.get('last_updated'):
+                logger.warning(f"No financial data found for {ticker}")
                 return 0
             
             # Check if already processed and up-to-date
-            processed_estimates = state["processed_files"].get("estimates_data", [])
-            if not force_reprocess and processed_estimates:
-                last_processed = processed_estimates[0].get("last_updated")
-                if last_processed and float(last_processed) >= estimates_data['last_updated']:
-                    logger.debug(f"Estimates data already up-to-date for {ticker}")
+            processed_financial = state["processed_files"].get("financial_statements", [])
+            if not force_reprocess and processed_financial:
+                last_processed = processed_financial[0].get("last_updated")
+                if last_processed and float(last_processed) >= financial_data['last_updated']:
+                    logger.debug(f"Financial data already up-to-date for {ticker}")
                     return 0
             
-            # Create embeddings for estimates data
-            embedded_docs = self._create_estimates_embeddings(ticker, estimates_data)
+            # Create embeddings for comprehensive financial data
+            raw_docs = self._create_financial_embeddings(ticker, financial_data)
             
-            # Remove old estimates data from database
-            self._remove_old_estimates_data(ticker)
+            # Convert to proper format and generate embeddings
+            embedded_docs = []
+            for i, doc in enumerate(raw_docs):
+                try:
+                    # Generate embedding for the content using document service
+                    embedding = self.doc_service.ai_service.generate_embedding(doc["content"])
+                    
+                    # Create properly formatted document
+                    formatted_doc = {
+                        "id": f"{ticker.lower()}_financial_{i}_{int(datetime.utcnow().timestamp())}",
+                        "embedding": embedding,
+                        "metadata": doc["metadata"],
+                        "document": doc["content"]
+                    }
+                    
+                    embedded_docs.append(formatted_doc)
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create embedding for financial document {i}: {str(e)}")
+                    continue
             
-            # Add new estimates data to database
+            if not embedded_docs:
+                logger.error(f"No valid embeddings created for {ticker} financial data")
+                return 0
+            
+            # Remove old financial data from database
+            self._remove_old_financial_data(ticker)
+            
+            # Add new financial data to database
             self.db_service.add_documents(ticker, embedded_docs)
             
             # Update processing state
-            estimates_info = {
-                "data_type": "estimates",
-                "last_updated": estimates_data['last_updated'],
+            financial_info = {
+                "data_type": "financial_statements",
+                "last_updated": financial_data['last_updated'],
                 "processed_date": datetime.utcnow().timestamp(),
                 "chunk_count": len(embedded_docs),
+                "statements_parsed": financial_data['parsing_summary']['statements_parsed'],
+                "total_metrics": financial_data['parsing_summary']['total_metrics'],
                 "status": "completed"
             }
             
-            state["processed_files"]["estimates_data"] = [estimates_info]
+            # Replace financial statements in processed files list
+            state["processed_files"]["financial_statements"] = [financial_info]
             
-            logger.info(f"Successfully processed estimates data for {ticker}: {len(embedded_docs)} chunks")
+            logger.info(f"Successfully processed financial data for {ticker}: {len(embedded_docs)} chunks")
             return len(embedded_docs)
             
         except Exception as e:
-            logger.error(f"Failed to process estimates data for {ticker}: {str(e)}")
+            logger.error(f"Failed to process financial data for {ticker}: {str(e)}")
             return 0
     
-    def _create_estimates_embeddings(self, ticker: str, estimates_data: Dict) -> List[Dict]:
-        """Create embeddings for estimates data"""
+    def _create_financial_embeddings(self, ticker: str, financial_data: Dict) -> List[Dict]:
+        """
+        Create embeddings for comprehensive financial data.
+        Optimized for embedding token limits while maintaining GenAI analysis capability.
+        Creates focused, compact documents suitable for quarterly analysis context.
+        """
         embedded_docs = []
         
-        # Process each financial statement
-        for statement_type in ['income_statement', 'balance_sheet', 'cash_flow']:
-            statement_data = estimates_data.get(statement_type, {})
-            if not statement_data:
+        # Process each financial statement type
+        statement_types = {
+            'balance_sheet': 'Balance Sheet',
+            'income_statement': 'Income Statement',
+            'cash_flow': 'Cash Flow Statement', 
+            'margin_analysis': 'Margin Analysis'
+        }
+        
+        for statement_key, statement_name in statement_types.items():
+            statement_data = financial_data.get(statement_key, {})
+            if not statement_data or not statement_data.get('metrics'):
                 continue
-                
-            # Create comprehensive text representation of the data
-            content_parts = []
-            content_parts.append(f"Financial Estimates Data - {statement_type.replace('_', ' ').title()}")
-            content_parts.append(f"Company: {ticker}")
-            content_parts.append(f"Last Updated: {datetime.fromtimestamp(estimates_data.get('last_updated', 0)).strftime('%Y-%m-%d')}")
             
-            # Add segment data
-            if 'segment_data' in statement_data:
-                content_parts.append("\nSegment Performance Data:")
-                for segment, data in statement_data['segment_data'].items():
-                    content_parts.append(f"- {segment}:")
-                    if 'actuals' in data:
-                        content_parts.append(f"  Historical: {', '.join([item['value'] for item in data['actuals']])}")
-                    if 'estimates' in data:
-                        content_parts.append(f"  Estimates: {', '.join([item['value'] for item in data['estimates']])}")
+            # Extract key information
+            periods = statement_data.get('periods', [])
+            metrics = statement_data.get('metrics', {})
+            analysis = statement_data.get('analysis', {})
             
-            # Add margins data
-            if 'margins' in statement_data:
-                content_parts.append("\nMargin Data:")
-                for margin_type, data in statement_data['margins'].items():
-                    content_parts.append(f"- {margin_type.replace('_', ' ').title()}:")
-                    if 'actuals' in data:
-                        content_parts.append(f"  Historical: {', '.join([item['value'] for item in data['actuals']])}")
-                    if 'estimates' in data:
-                        content_parts.append(f"  Estimates: {', '.join([item['value'] for item in data['estimates']])}")
+            # Create focused summary for embedding (token-optimized, estimates-prioritized)
+            key_metrics = self._extract_key_metrics_for_embedding(metrics, statement_key)
+            recent_periods = periods[-8:] if len(periods) > 8 else periods  # Last 8 periods
             
-            # Add quarterly data if available
-            if 'quarterly_data' in statement_data and statement_data['quarterly_data']:
-                content_parts.append(f"\nQuarterly Data: {len(statement_data['quarterly_data'])} quarters available")
+            # Separate estimates from actual data for better GenAI context
+            estimates_data, actual_data = self._separate_estimates_and_actuals(key_metrics, recent_periods)
             
-            content = "\n".join(content_parts)
-            
-            # Create embedding document
-            doc = {
-                "content": content,
-                "metadata": {
-                    "document_type": "estimates_data",
-                    "statement_type": statement_type,
-                    "company_ticker": ticker.upper(),
-                    "data_source": "estimates_svg",
-                    "last_updated": estimates_data.get('last_updated'),
-                    "processed_date": datetime.utcnow().isoformat() + "Z",
-                    "priority": 0.9  # High priority for estimates data
+            # Create compact structured content optimized for quarterly comparison
+            structured_content = {
+                "statement_type": statement_name,
+                "ticker": ticker,
+                "last_updated": datetime.fromtimestamp(financial_data.get('last_updated', 0)).strftime('%Y-%m-%d'),
+                "recent_periods": recent_periods,
+                "estimates_data": estimates_data,  # Critical for quarterly comparison
+                "actual_data": actual_data,       # Historical actuals for context
+                "summary_stats": {
+                    "total_periods_available": len(periods),
+                    "estimates_metrics_count": len([m for m in key_metrics.keys() if self._has_estimates_periods(key_metrics[m])]),
+                    "actual_metrics_count": len([m for m in key_metrics.keys() if not self._has_estimates_periods(key_metrics[m])]),
+                    "latest_period": periods[-1] if periods else None,
+                    "estimates_periods": [p for p in recent_periods if p.endswith('E') or 'estimate' in p.lower()],
+                    "actual_periods": [p for p in recent_periods if not (p.endswith('E') or 'estimate' in p.lower())],
+                    "years_covered": list(set([p[-4:] for p in recent_periods if p[-4:].isdigit()]))
                 }
             }
             
-            embedded_docs.append(doc)
+            # Add trend analysis for key metrics (compact format)
+            if analysis:
+                structured_content["trends"] = self._create_compact_trend_analysis(key_metrics, recent_periods)
             
-            # Create separate documents for major segments if they have substantial data
-            if 'segment_data' in statement_data:
-                for segment, data in statement_data['segment_data'].items():
-                    if data.get('actuals') or data.get('estimates'):
-                        segment_content = f"Segment Analysis - {segment}\n"
-                        segment_content += f"Company: {ticker}\n"
-                        segment_content += f"Statement Type: {statement_type.replace('_', ' ').title()}\n\n"
-                        
-                        if data.get('actuals'):
-                            segment_content += f"Historical Performance: {', '.join([item['value'] for item in data['actuals']])}\n"
-                        
-                        if data.get('estimates'):
-                            segment_content += f"Analyst Estimates: {', '.join([item['value'] for item in data['estimates']])}\n"
-                        
-                        segment_doc = {
-                            "content": segment_content,
-                            "metadata": {
-                                "document_type": "segment_estimates",
-                                "segment_name": segment,
-                                "statement_type": statement_type,
-                                "company_ticker": ticker.upper(),
-                                "data_source": "estimates_svg",
-                                "last_updated": estimates_data.get('last_updated'),
-                                "processed_date": datetime.utcnow().isoformat() + "Z",
-                                "priority": 0.8
-                            }
-                        }
-                        
-                        embedded_docs.append(segment_doc)
+            # Add comparative insights (limited to avoid token overflow)
+            if statement_key in financial_data.get('comparative_analysis', {}):
+                comp_data = financial_data['comparative_analysis'][statement_key]
+                structured_content["insights"] = self._extract_key_insights(comp_data)
+            
+            # Store as compact JSON
+            document = {
+                "content": json.dumps(structured_content, separators=(',', ':'), default=str),  # Compact JSON
+                "metadata": {
+                    "ticker": ticker,
+                    "document_type": f"financial_statement_{statement_key}",
+                    "statement_type": statement_name,
+                    "source": "enhanced_svg_parser",
+                    "periods_count": len(recent_periods),
+                    "metrics_count": len(key_metrics),
+                    "last_updated": financial_data.get('last_updated'),
+                    "parsing_timestamp": datetime.utcnow().isoformat(),
+                    "content_format": "compact_json",
+                    "genai_optimized": True,
+                    "embedding_optimized": True
+                }
+            }
+            
+            logger.info(f"Created compact JSON document for {ticker} {statement_name} with {len(recent_periods)} periods and {len(key_metrics)} key metrics")
+            embedded_docs.append(document)
         
+        # Add overall comparative analysis as a separate compact document
+        if financial_data.get('comparative_analysis'):
+            parsing_summary = financial_data.get('parsing_summary', {})
+            
+            # Create highly summarized comparative analysis
+            comp_structured_content = {
+                "analysis_type": "financial_summary", 
+                "ticker": ticker,
+                "last_updated": datetime.fromtimestamp(financial_data.get('last_updated', 0)).strftime('%Y-%m-%d'),
+                "overview": {
+                    "statements": parsing_summary.get('statements_parsed', []),
+                    "total_metrics": parsing_summary.get('total_metrics', 0),
+                    "total_periods": parsing_summary.get('total_periods', 0)
+                },
+                "key_insights": self._extract_top_financial_insights(financial_data['comparative_analysis'])
+            }
+            
+            comp_document = {
+                "content": json.dumps(comp_structured_content, separators=(',', ':'), default=str),
+                "metadata": {
+                    "ticker": ticker,
+                    "document_type": "financial_comparative_analysis",
+                    "source": "enhanced_svg_parser",
+                    "last_updated": financial_data.get('last_updated'),
+                    "parsing_timestamp": datetime.utcnow().isoformat(),
+                    "content_format": "compact_json",
+                    "genai_optimized": True,
+                    "embedding_optimized": True
+                }
+            }
+            
+            logger.info(f"Created compact comparative analysis document for {ticker}")
+            embedded_docs.append(comp_document)
+        
+        logger.info(f"Created {len(embedded_docs)} embedding-optimized financial documents for {ticker}")
         return embedded_docs
     
-    def _remove_old_estimates_data(self, ticker: str):
-        """Remove old estimates data from the database"""
+    def _remove_old_financial_data(self, ticker: str):
+        """Remove old financial data from the database"""
         try:
             collection = self.db_service.get_collection(ticker)
             
             # Get all documents
             all_docs = collection.get()
             
-            # Find documents with estimates data
+            # Find documents with financial statement data
             ids_to_delete = []
             for i, metadata in enumerate(all_docs["metadatas"]):
-                if metadata.get("document_type") in ["estimates_data", "segment_estimates"]:
+                doc_type = metadata.get("document_type", "")
+                if (doc_type.startswith("financial_statement_") or 
+                    doc_type == "financial_comparative_analysis" or
+                    doc_type in ["estimates_data", "segment_estimates"]):  # Remove old estimates too
                     ids_to_delete.append(all_docs["ids"][i])
             
-            # Delete old estimates documents
+            # Delete old financial documents
             if ids_to_delete:
                 collection.delete(ids=ids_to_delete)
-                logger.info(f"Removed {len(ids_to_delete)} old estimates documents for {ticker}")
+                logger.info(f"Removed {len(ids_to_delete)} old financial documents for {ticker}")
+            else:
+                logger.info(f"No old financial documents found for {ticker}")
                 
         except Exception as e:
-            logger.error(f"Failed to remove old estimates data for {ticker}: {str(e)}")
+            logger.error(f"Error removing old financial data for {ticker}: {str(e)}")
+            # Continue processing even if cleanup fails
+
     
-    def get_estimates_data(self, ticker: str) -> Dict:
-        """Get estimates data for a company"""
+    def get_financial_data(self, ticker: str) -> Dict:
+        """Get comprehensive financial data for a company from stored embeddings (enhanced parser format)"""
         try:
-            estimates_data = self.estimates_parser.parse_estimates_folder(ticker)
+            # Get financial documents from database
+            collection = self.db_service.get_collection(ticker)
+            
+            # Fetch all financial statement documents and comparative analysis
+            financial_docs = collection.get(
+                where={"document_type": {"$in": [
+                    "financial_statement_balance_sheet",
+                    "financial_statement_income_statement", 
+                    "financial_statement_cash_flow",
+                    "financial_statement_margin_analysis",
+                    "financial_comparative_analysis"
+                ]}}
+            )
+            
+            if not financial_docs["ids"]:
+                logger.warning(f"No processed financial data found for {ticker}")
+                return {}
+            
+            # Reconstruct financial data from stored documents
+            financial_data = {
+                "ticker": ticker.upper(),
+                "last_updated": None,
+                "balance_sheet": {},
+                "income_statement": {},
+                "cash_flow": {},
+                "margin_analysis": {},
+                "comparative_analysis": {}
+            }
+            
+            # Process each document to rebuild the financial data structure
+            for i, metadata in enumerate(financial_docs["metadatas"]):
+                doc_content = financial_docs["documents"][i]
+                doc_type = metadata.get("document_type")
+                statement_type = metadata.get("statement_type")
+                
+                # Update last_updated with the most recent timestamp
+                doc_last_updated = metadata.get("last_updated")
+                if doc_last_updated and (not financial_data["last_updated"] or doc_last_updated > financial_data["last_updated"]):
+                    financial_data["last_updated"] = doc_last_updated
+                
+                # Parse the content to extract structured data
+                if doc_type == "financial_comparative_analysis":
+                    # This contains the comprehensive analysis
+                    financial_data["comparative_analysis"] = {
+                        "content": doc_content,
+                        "metadata": metadata,
+                        "analysis_types": metadata.get("analysis_types", "").split(",") if metadata.get("analysis_types") else [],
+                        "statements_included": metadata.get("statements_included", "").split(",") if metadata.get("statements_included") else []
+                    }
+                elif doc_type.startswith("financial_statement_"):
+                    # Individual financial statement
+                    statement_key = doc_type.replace("financial_statement_", "")
+                    financial_data[statement_key] = {
+                        "content": doc_content,
+                        "metadata": metadata,
+                        "statement_type": statement_type,
+                        "periods_count": metadata.get("periods_count", 0),
+                        "metrics_count": metadata.get("metrics_count", 0)
+                    }
+            
+            return financial_data
+            
+        except Exception as e:
+            logger.error(f"Failed to get financial data for {ticker}: {str(e)}")
+            return {}
+
+    def get_estimates_data(self, ticker: str) -> Dict:
+        """Get estimates data for a company (legacy method for backward compatibility)"""
+        try:
+            collection = self.db_service.get_collection(ticker)
+            
+            # Query for estimates documents (legacy format only)
+            estimates_docs = collection.get(
+                where={"document_type": {"$in": ["estimates_data", "segment_estimates"]}}
+            )
+            
+            if not estimates_docs["ids"]:
+                logger.warning(f"No processed estimates data found for {ticker}")
+                return {}
+            
+            # Reconstruct estimates data from stored documents
+            estimates_data = {
+                "ticker": ticker.upper(),
+                "last_updated": None,
+                "income_statement": {},
+                "balance_sheet": {},
+                "cash_flow": {}
+            }
+            
+            # Process each document to rebuild the estimates structure
+            for i, metadata in enumerate(estimates_docs["metadatas"]):
+                doc_content = estimates_docs["documents"][i]
+                doc_type = metadata.get("document_type")
+                statement_type = metadata.get("statement_type")
+                
+                # Update last_updated with the most recent timestamp
+                doc_last_updated = metadata.get("last_updated")
+                if doc_last_updated and (not estimates_data["last_updated"] or doc_last_updated > estimates_data["last_updated"]):
+                    estimates_data["last_updated"] = doc_last_updated
+                
+                # Initialize statement data if not exists
+                if statement_type and statement_type not in estimates_data:
+                    estimates_data[statement_type] = {
+                        "segment_data": {},
+                        "margins": {},
+                        "quarterly_data": [],
+                        "estimates": {}
+                    }
+                
+                # Process document content to extract structured data
+                if doc_type == "estimates_data" and statement_type:
+                    # This is a main estimates document - extract general info
+                    estimates_data[statement_type]["document_content"] = doc_content
+                    
+                elif doc_type == "segment_estimates" and statement_type:
+                    # This is a segment-specific document
+                    segment_name = metadata.get("segment_name")
+                    if segment_name:
+                        if "segment_data" not in estimates_data[statement_type]:
+                            estimates_data[statement_type]["segment_data"] = {}
+                        estimates_data[statement_type]["segment_data"][segment_name] = {
+                            "content": doc_content,
+                            "metadata": metadata
+                        }
+            
             return estimates_data
+            
         except Exception as e:
             logger.error(f"Failed to get estimates data for {ticker}: {str(e)}")
             return {}
+    
+    def get_available_financial_document_types(self, ticker: str) -> Dict[str, List[str]]:
+        """Get available financial document types for debugging and verification"""
+        try:
+            collection = self.db_service.get_collection(ticker)
+            all_docs = collection.get()
+            
+            # Group documents by type
+            document_types = {
+                "enhanced_financial": [],
+                "old_estimates": [],
+                "other": []
+            }
+            
+            enhanced_types = [
+                "financial_statement_balance_sheet",
+                "financial_statement_income_statement", 
+                "financial_statement_cash_flow",
+                "financial_statement_margin_analysis",
+                "financial_comparative_analysis"
+            ]
+            
+            old_types = ["estimates_data", "segment_estimates"]
+            
+            for metadata in all_docs["metadatas"]:
+                doc_type = metadata.get("document_type")
+                if doc_type in enhanced_types:
+                    document_types["enhanced_financial"].append(doc_type)
+                elif doc_type in old_types:
+                    document_types["old_estimates"].append(doc_type)
+                elif doc_type:
+                    document_types["other"].append(doc_type)
+            
+            # Remove duplicates
+            for key in document_types:
+                document_types[key] = list(set(document_types[key]))
+            
+            logger.info(f"Available financial document types for {ticker}: {document_types}")
+            return document_types
+            
+        except Exception as e:
+            logger.error(f"Failed to get document types for {ticker}: {str(e)}")
+            return {"enhanced_financial": [], "old_estimates": [], "other": []}
+
+    def get_comprehensive_financial_data(self, ticker: str) -> Optional[Dict]:
+        """
+        Get comprehensive financial data for document analysis.
+        This method retrieves enhanced financial statement data (Balance Sheet, Income Statement, 
+        Cash Flow, Margin Analysis) to be used directly for GenAI-based earnings analysis and comparisons.
+        """
+        try:
+            logger.info(f"Retrieving comprehensive financial data for {ticker}")
+            collection = self.db_service.get_collection(ticker)
+            
+            # Define enhanced financial document types
+            financial_doc_types = [
+                "financial_statement_balance_sheet",
+                "financial_statement_income_statement", 
+                "financial_statement_cash_flow",
+                "financial_statement_margin_analysis",
+                "financial_comparative_analysis"
+            ]
+            
+            comprehensive_data = {
+                "ticker": ticker,
+                "last_updated": None,
+                "balance_sheet": {},
+                "income_statement": {},
+                "cash_flow": {},
+                "margin_analysis": {},
+                "comparative_analysis": {},
+                "has_data": False,
+                "data_format": "structured_json"
+            }
+            
+            # Retrieve each type of financial statement
+            for doc_type in financial_doc_types:
+                try:
+                    results = collection.get(
+                        where={"document_type": doc_type}
+                    )
+                    
+                    if results["documents"] and results["documents"]:
+                        document_content = results["documents"][0]
+                        metadata = results["metadatas"][0]
+                        
+                        # Parse the JSON content
+                        try:
+                            if metadata.get("content_format") in ["structured_json", "compact_json"]:
+                                # New structured JSON format
+                                financial_content = json.loads(document_content)
+                            else:
+                                # Fallback for old text format - skip or convert
+                                logger.warning(f"Old text format found for {doc_type}, skipping...")
+                                continue
+                            
+                            # Update last_updated with the most recent timestamp
+                            doc_last_updated = metadata.get("last_updated")
+                            if doc_last_updated and (not comprehensive_data["last_updated"] or 
+                                                   doc_last_updated > comprehensive_data["last_updated"]):
+                                comprehensive_data["last_updated"] = doc_last_updated
+                            
+                            # Store data by statement type
+                            if doc_type == "financial_statement_balance_sheet":
+                                comprehensive_data["balance_sheet"] = financial_content
+                                comprehensive_data["has_data"] = True
+                            elif doc_type == "financial_statement_income_statement":
+                                comprehensive_data["income_statement"] = financial_content
+                                comprehensive_data["has_data"] = True
+                            elif doc_type == "financial_statement_cash_flow":
+                                comprehensive_data["cash_flow"] = financial_content
+                                comprehensive_data["has_data"] = True
+                            elif doc_type == "financial_statement_margin_analysis":
+                                comprehensive_data["margin_analysis"] = financial_content
+                                comprehensive_data["has_data"] = True
+                            elif doc_type == "financial_comparative_analysis":
+                                comprehensive_data["comparative_analysis"] = financial_content
+                                comprehensive_data["has_data"] = True
+                            
+                            logger.info(f"Successfully retrieved structured {doc_type} data for {ticker}")
+                            
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Failed to parse {doc_type} content as JSON: {str(e)}")
+                            continue
+                            
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve {doc_type} for {ticker}: {str(e)}")
+                    continue
+            
+            if comprehensive_data["has_data"]:
+                logger.info(f"Successfully retrieved comprehensive structured financial data for {ticker}")
+                return comprehensive_data
+            else:
+                logger.warning(f"No comprehensive financial data found for {ticker}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get comprehensive financial data for {ticker}: {str(e)}")
+            return None
+
+    def _extract_key_metrics_for_embedding(self, metrics: Dict, statement_type: str) -> Dict:
+        """
+        Extract metrics for embedding, prioritizing estimates data and including all metrics.
+        Uses smart period limiting and data compression instead of metric filtering.
+        """
+        optimized_metrics = {}
+        estimates_metrics = {}
+        actual_metrics = {}
+        
+        # First, separate estimates from actuals for all metrics (no filtering by name)
+        for metric_name, metric_data in metrics.items():
+            if isinstance(metric_data, dict):
+                # Check if this metric has estimates periods
+                has_estimates = any(
+                    period.endswith('E') or 'estimate' in period.lower() or 'E' in period
+                    for period in metric_data.keys()
+                )
+                
+                if has_estimates:
+                    estimates_metrics[metric_name] = metric_data
+                else:
+                    actual_metrics[metric_name] = metric_data
+        
+        token_budget = 6500  # Conservative budget for embeddings
+        current_tokens = 0
+        
+        # ALWAYS include ALL estimates metrics (with period limiting if needed)
+        for metric_name, metric_data in estimates_metrics.items():
+            # For estimates, include all estimate periods but limit actual historical data
+            optimized_metric_data = {}
+            estimate_periods = {}
+            actual_periods = {}
+            
+            # Separate estimate and actual periods
+            for period, value in metric_data.items():
+                if period.endswith('E') or 'estimate' in period.lower() or 'E' in period:
+                    estimate_periods[period] = value
+                else:
+                    actual_periods[period] = value
+            
+            # Include ALL estimate periods (these are critical)
+            optimized_metric_data.update(estimate_periods)
+            
+            # For actual periods in estimates metrics, keep recent ones for context
+            if actual_periods:
+                sorted_actual_periods = sorted(actual_periods.keys(), reverse=True)
+                # Keep last 4 actual periods for context with estimates
+                for period in sorted_actual_periods[:4]:
+                    optimized_metric_data[period] = actual_periods[period]
+            
+            optimized_metrics[metric_name] = optimized_metric_data
+            
+            # Rough token estimation
+            estimated_tokens = len(str(metric_name)) + len(str(optimized_metric_data)) // 4
+            current_tokens += estimated_tokens
+        
+        logger.info(f"Included ALL {len(estimates_metrics)} estimates metrics, estimated tokens: {current_tokens}")
+        
+        # Include ALL actual metrics with smart period limiting
+        remaining_budget = token_budget - current_tokens
+        
+        for metric_name, metric_data in actual_metrics.items():
+            # For pure actual metrics, limit periods more aggressively to save tokens
+            if isinstance(metric_data, dict):
+                # Keep last 6 periods for actual-only metrics
+                sorted_periods = sorted(metric_data.keys(), reverse=True)
+                limited_periods = sorted_periods[:6] if len(sorted_periods) > 6 else sorted_periods
+                
+                optimized_metric_data = {
+                    period: metric_data[period] for period in limited_periods
+                }
+            else:
+                optimized_metric_data = metric_data
+            
+            # Estimate token usage for this metric
+            estimated_tokens = len(str(metric_name)) + len(str(optimized_metric_data)) // 4
+            
+            # Include if within budget, or if it's a small metric
+            if current_tokens + estimated_tokens < remaining_budget or estimated_tokens < 100:
+                optimized_metrics[metric_name] = optimized_metric_data
+                current_tokens += estimated_tokens
+            else:
+                # If we're over budget, include with even more limited periods
+                if isinstance(metric_data, dict) and len(metric_data) > 2:
+                    sorted_periods = sorted(metric_data.keys(), reverse=True)
+                    very_limited_periods = sorted_periods[:2]  # Just last 2 periods
+                    minimal_data = {period: metric_data[period] for period in very_limited_periods}
+                    minimal_tokens = len(str(metric_name)) + len(str(minimal_data)) // 4
+                    
+                    if current_tokens + minimal_tokens < token_budget:
+                        optimized_metrics[metric_name] = minimal_data
+                        current_tokens += minimal_tokens
+                else:
+                    # Very small metric, include as-is
+                    optimized_metrics[metric_name] = optimized_metric_data
+                    current_tokens += estimated_tokens
+        
+        logger.info(f"Final: ALL {len(optimized_metrics)} metrics included (estimates: {len(estimates_metrics)}, actual: {len(optimized_metrics) - len(estimates_metrics)}), estimated tokens: {current_tokens}")
+        return optimized_metrics
+
+    def _create_compact_trend_analysis(self, metrics: Dict, periods: List) -> Dict:
+        """Create compact trend analysis for all metrics, prioritizing estimates data"""
+        trends = {}
+        
+        # Process ALL metrics but prioritize those with estimates
+        estimates_metrics = []
+        other_metrics = []
+        
+        for metric_name, metric_data in metrics.items():
+            if self._has_estimates_periods(metric_data):
+                estimates_metrics.append((metric_name, metric_data))
+            else:
+                other_metrics.append((metric_name, metric_data))
+        
+        # Process estimates metrics first (most important for quarterly comparison)
+        processed_count = 0
+        token_budget = 1500  # Budget for trend analysis section
+        current_tokens = 0
+        
+        for metric_name, metric_data in estimates_metrics:
+            if current_tokens > token_budget:  # Use token budget instead of count limit
+                break
+                
+            if isinstance(metric_data, dict) and len(metric_data) >= 2:
+                trend_info = self._calculate_metric_trends(metric_name, metric_data)
+                if trend_info:
+                    trends[metric_name] = trend_info
+                    current_tokens += len(str(trend_info)) // 4
+                    processed_count += 1
+        
+        # Process remaining actual metrics with available budget
+        remaining_budget = token_budget - current_tokens
+        for metric_name, metric_data in other_metrics:
+            if current_tokens > token_budget:
+                break
+                
+            if isinstance(metric_data, dict) and len(metric_data) >= 2:
+                trend_info = self._calculate_metric_trends(metric_name, metric_data)
+                if trend_info:
+                    trend_size = len(str(trend_info)) // 4
+                    if current_tokens + trend_size <= token_budget:
+                        trends[metric_name] = trend_info
+                        current_tokens += trend_size
+                        processed_count += 1
+        
+        logger.info(f"Created trends for {processed_count} metrics (estimates priority), estimated tokens: {current_tokens}")
+        return trends
+
+    def _calculate_metric_trends(self, metric_name: str, metric_data: Dict) -> Dict:
+        """Calculate trends for a single metric, handling estimates and actuals separately"""
+        # Separate estimates and actual values for trend analysis
+        est_values = []
+        est_periods = []
+        actual_values = []
+        actual_periods = []
+        
+        for period in sorted(metric_data.keys()):
+            if period in metric_data:
+                value_info = metric_data[period]
+                value = None
+                if isinstance(value_info, dict) and 'value' in value_info:
+                    value = value_info['value']
+                elif isinstance(value_info, (int, float)):
+                    value = value_info
+                
+                if value is not None and isinstance(value, (int, float)):
+                    if period.endswith('E') or 'estimate' in period.lower():
+                        est_values.append(value)
+                        est_periods.append(period)
+                    else:
+                        actual_values.append(value)
+                        actual_periods.append(period)
+        
+        trend_info = {}
+        
+        # Add estimates trend if available
+        if len(est_values) >= 2:
+            trend_info["estimates"] = {
+                "direction": "up" if est_values[-1] > est_values[0] else "down",
+                "latest": est_values[-1],
+                "change_pct": round(((est_values[-1] - est_values[0]) / abs(est_values[0])) * 100, 1) if est_values[0] != 0 else 0,
+                "periods": len(est_periods)
+            }
+        
+        # Add actual trend if available
+        if len(actual_values) >= 2:
+            trend_info["actual"] = {
+                "direction": "up" if actual_values[-1] > actual_values[0] else "down", 
+                "latest": actual_values[-1],
+                "change_pct": round(((actual_values[-1] - actual_values[0]) / abs(actual_values[0])) * 100, 1) if actual_values[0] != 0 else 0,
+                "periods": len(actual_periods)
+            }
+        
+        # If neither estimates nor actuals, try all values together
+        if not trend_info:
+            all_values = []
+            for period in sorted(metric_data.keys()):
+                if period in metric_data:
+                    value_info = metric_data[period]
+                    if isinstance(value_info, dict) and 'value' in value_info:
+                        all_values.append(value_info['value'])
+                    elif isinstance(value_info, (int, float)):
+                        all_values.append(value_info)
+            
+            if len(all_values) >= 2 and all(isinstance(v, (int, float)) for v in all_values):
+                trend_info["combined"] = {
+                    "direction": "up" if all_values[-1] > all_values[0] else "down",
+                    "latest": all_values[-1],
+                    "change_pct": round(((all_values[-1] - all_values[0]) / abs(all_values[0])) * 100, 1) if all_values[0] != 0 else 0
+                }
+        
+        return trend_info if trend_info else None
+
+    def _extract_key_insights(self, comp_analysis: Dict) -> Dict:
+        """Extract key insights from comparative analysis, keeping it compact"""
+        insights = {}
+        
+        # Extract top 3 insights only to stay within token limits
+        insight_count = 0
+        for key, value in comp_analysis.items():
+            if insight_count >= 3:
+                break
+            
+            if isinstance(value, dict) and 'summary' in value:
+                insights[key] = value['summary']
+                insight_count += 1
+            elif isinstance(value, str) and len(value) < 200:  # Only short insights
+                insights[key] = value
+                insight_count += 1
+        
+        return insights
+
+    def _extract_top_financial_insights(self, comparative_analysis: Dict) -> Dict:
+        """Extract top-level financial insights for comparative analysis document"""
+        insights = {}
+        
+        # Extract key insights from different analysis types
+        for analysis_type, analysis_data in list(comparative_analysis.items())[:3]:  # Limit to 3 types
+            if isinstance(analysis_data, dict):
+                # Extract summary or key metrics
+                if 'key_metrics' in analysis_data:
+                    insights[analysis_type] = {
+                        "type": analysis_type.replace('_', ' ').title(),
+                        "metrics_count": len(analysis_data['key_metrics']) if isinstance(analysis_data['key_metrics'], dict) else 0
+                    }
+                elif 'summary' in analysis_data:
+                    insights[analysis_type] = {
+                        "type": analysis_type.replace('_', ' ').title(), 
+                        "summary": str(analysis_data['summary'])[:100] + "..." if len(str(analysis_data['summary'])) > 100 else str(analysis_data['summary'])
+                    }
+        
+        return insights
+
+    def _separate_estimates_and_actuals(self, metrics: Dict, periods: List) -> tuple:
+        """Separate estimates data from actual data for better GenAI context"""
+        estimates_data = {}
+        actual_data = {}
+        
+        for metric_name, metric_data in metrics.items():
+            if isinstance(metric_data, dict):
+                estimates_periods = {}
+                actual_periods = {}
+                
+                for period, value in metric_data.items():
+                    if period.endswith('E') or 'estimate' in period.lower() or 'E' in period:
+                        estimates_periods[period] = value
+                    else:
+                        actual_periods[period] = value
+                
+                if estimates_periods:
+                    estimates_data[metric_name] = estimates_periods
+                if actual_periods:
+                    actual_data[metric_name] = actual_periods
+        
+        return estimates_data, actual_data
+    
+    def _has_estimates_periods(self, metric_data: Dict) -> bool:
+        """Check if a metric has any estimates periods"""
+        if not isinstance(metric_data, dict):
+            return False
+        
+        return any(
+            period.endswith('E') or 'estimate' in period.lower() or 'E' in period
+            for period in metric_data.keys()
+        )

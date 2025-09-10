@@ -5,6 +5,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
+# Disable ChromaDB telemetry to prevent telemetry errors
+os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
+# Suppress ChromaDB telemetry logging errors
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+
 from app.config import config
 
 def create_app(config_name=None):
@@ -39,7 +45,7 @@ def create_app(config_name=None):
     api.add_namespace(document_bp, path='/api')
     api.add_namespace(report_bp, path='/api')
     api.add_namespace(health_bp, path='/api')
-    app.register_blueprint(estimates_bp)  # Standard Flask blueprint
+    api.add_namespace(estimates_bp, path='/api/estimates')
     
     # Configure Logging
     configure_logging(app)

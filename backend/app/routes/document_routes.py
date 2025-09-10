@@ -12,6 +12,7 @@ from app.services.database_service import DatabaseService
 from app.services.ai_service import AIService
 from app.services.document_service import DocumentProcessingService
 from app.services.knowledge_base_service import KnowledgeBaseService
+from app.services.enhanced_svg_parser import create_enhanced_financial_parser
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ db_service = DatabaseService(app_config)
 ai_service = AIService(app_config)
 kb_service = KnowledgeBaseService(app_config, db_service, None)
 doc_service = DocumentProcessingService(app_config, ai_service, kb_service)
+enhanced_parser = create_enhanced_financial_parser(app_config)
 
 # API Namespace
 document_bp = Namespace('documents', description='Document management operations')
@@ -351,20 +353,23 @@ class DocumentAnalysis(Resource):
                         })
                 
                 # Generate new analysis with updated parameters
-                # Use the same enhanced logic as in upload
+                # Use comprehensive financial data for analysis
                 try:
-                    estimates_data = kb_service.get_estimates_data(ticker.upper())
-                    has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
+                    # Use comprehensive financial data
+                    comprehensive_data = kb_service.get_comprehensive_financial_data(ticker.upper())
+                    has_comprehensive = bool(comprehensive_data and comprehensive_data.get('has_data'))
+                        
                 except Exception as e:
-                    logger.warning(f"Failed to check estimates data: {str(e)}")
-                    has_estimates = False
-                    estimates_data = {}
+                    logger.warning(f"Failed to check comprehensive financial data: {str(e)}")
+                    has_comprehensive = False
+                    comprehensive_data = {}
                 
-                if has_estimates:
-                    # Use enhanced processing with comparison
+                if has_comprehensive:
+                    # Use comprehensive financial data processing
+                    logger.info(f"Using comprehensive financial analysis for {ticker.upper()}")
                     document_metrics = doc_service._extract_document_metrics(document_content, None)
-                    comparative_data = doc_service._perform_comparative_analysis(
-                        ticker.upper(), document_metrics, estimates_data, None
+                    comparative_data = doc_service._perform_comprehensive_financial_analysis(
+                        ticker.upper(), document_metrics, comprehensive_data or {}, None
                     )
                     
                     new_analysis = ai_service.generate_comparative_analysis(
@@ -376,14 +381,17 @@ class DocumentAnalysis(Resource):
                     
                     new_analysis["comparative_data"] = comparative_data
                     new_analysis["document_metrics"] = document_metrics
-                    new_analysis["has_estimates_comparison"] = True
+                    new_analysis["has_comprehensive_analysis"] = True
+                    
                 else:
+                    # No comprehensive financial data available - generate basic analysis
+                    logger.info(f"No comprehensive financial data available for {ticker.upper()}, generating basic analysis")
                     new_analysis = ai_service.generate_report_draft(
                         document_content, 
                         context_documents, 
                         analysis_type or document_data.get("document_type", "general")
                     )
-                    new_analysis["has_estimates_comparison"] = False
+                    new_analysis["has_comprehensive_analysis"] = False
                 
                 # Update document data
                 document_data["analysis"] = new_analysis
@@ -678,59 +686,73 @@ class DocumentBatchAnalysis(Resource):
                             }
                             context_documents.append(context_doc)
                     
-                    # Check if estimates data is available for comparative analysis
+                    # Check for comprehensive financial data
                     try:
-                        estimates_data = kb_service.get_estimates_data(ticker.upper())
-                        has_estimates = bool(estimates_data and estimates_data.get('last_updated'))
-                        logger.info(f"Estimates data available for {ticker}: {has_estimates}")
+                        # Use comprehensive financial data for analysis
+                        comprehensive_data = kb_service.get_comprehensive_financial_data(ticker.upper())
+                        has_comprehensive = bool(comprehensive_data and comprehensive_data.get('has_data'))
+                        logger.info(f"Comprehensive financial data available for {ticker}: {has_comprehensive}")
                     except Exception as e:
-                        logger.warning(f"Failed to check estimates data: {str(e)}")
-                        has_estimates = False
-                        estimates_data = {}
+                        logger.warning(f"Failed to check comprehensive financial data: {str(e)}")
+                        has_comprehensive = False
+                        comprehensive_data = {}
                     
-                    if has_estimates:
-                        # Use enhanced document processing with comparison
-                        logger.info(f"Using enhanced processing with comparative analysis for {upload_id}")
+                    if has_comprehensive:
+                        # Use comprehensive financial analysis with analyst estimates
+                        logger.info(f"Using comprehensive financial analysis with analyst estimates for {upload_id}")
+                        
+                        # Get analyst estimates for this ticker
+                        analyst_estimates = None
+                        try:
+                            targetDate = datetime(2025, 7, 30)
+                            analyst_estimates = enhanced_parser.get_current_quarter_estimates_for_ai(ticker.upper(), targetDate)
+                            logger.info(f"Successfully retrieved analyst estimates for comprehensive analysis of {ticker} ({len(analyst_estimates) if analyst_estimates else 0} characters), date {targetDate}")
+                        except Exception as e:
+                            logger.warning(f"Failed to retrieve analyst estimates for comprehensive analysis of {ticker}: {str(e)}")
+                        
                         document_metrics = doc_service._extract_document_metrics(document_content, None)
-                        comparative_data = doc_service._perform_comparative_analysis(
-                            ticker.upper(), document_metrics, estimates_data, None
+                        comparative_data = doc_service._perform_comprehensive_financial_analysis(
+                            ticker.upper(), document_metrics, comprehensive_data or {}, None
                         )
                         
-                        # Generate initial analysis first
-                        initial_analysis = ai_service.generate_initial_analysis(
+                        initial_analysis = ai_service.generate_comparative_analysis(
                             document_content,
                             context_documents,
-                            document_type
+                            comparative_data,
+                            content_data.get("document_type", "general"),
+                            analyst_estimates  # Pass analyst estimates to comparative analysis
                         )
                         
-                        # Then generate additional comparative analysis
-                        try:
-                            comparative_analysis = ai_service.generate_comparative_analysis(
-                                document_content,
-                                context_documents,
-                                comparative_data,
-                                document_type
-                            )
-                            initial_analysis["comparative_analysis"] = comparative_analysis
-                            initial_analysis["comparative_data"] = comparative_data
-                            initial_analysis["document_metrics"] = document_metrics
-                            initial_analysis["has_estimates_comparison"] = True
-                            logger.info(f"Enhanced analysis with comparative insights generated for {upload_id}")
-                        except Exception as comp_error:
-                            logger.warning(f"Comparative analysis failed for {upload_id}, using initial analysis only: {str(comp_error)}")
-                            initial_analysis["comparative_data"] = comparative_data
-                            initial_analysis["document_metrics"] = document_metrics
-                            initial_analysis["has_estimates_comparison"] = True
+                        initial_analysis["comparative_data"] = comparative_data
+                        initial_analysis["document_metrics"] = document_metrics
+                        initial_analysis["has_comprehensive_analysis"] = True
+                        initial_analysis["has_analyst_estimates"] = bool(analyst_estimates)
+                        
+                        # Add analyst estimates to metadata for potential future use
+                        if analyst_estimates:
+                            initial_analysis["analyst_estimates_preview"] = analyst_estimates[:200] + "..." if len(analyst_estimates) > 200 else analyst_estimates
                         
                     else:
-                        # Use regular initial analysis without estimates comparison 
-                        logger.info(f"Using standard initial analysis for {upload_id}")
+                        # No comprehensive financial data available - generate basic analysis with analyst estimates
+                        logger.info(f"No comprehensive financial data available for {ticker}, generating basic analysis with analyst estimates for {upload_id}")
+                        
+                        # Get analyst estimates for this ticker
+                        analyst_estimates = None
+                        try:
+                            targetDate = datetime(2025, 5, 30)
+                            analyst_estimates = enhanced_parser.get_current_quarter_estimates_for_ai(ticker.upper(), targetDate)
+                            logger.info(f"Successfully retrieved analyst estimates for {ticker} ({len(analyst_estimates) if analyst_estimates else 0} characters)")
+                        except Exception as e:
+                            logger.warning(f"Failed to retrieve analyst estimates for {ticker}: {str(e)}")
+                        
                         initial_analysis = ai_service.generate_initial_analysis(
                             document_content, 
                             context_documents, 
-                            document_type
+                            content_data.get("document_type", "general"),
+                            analyst_estimates  # Pass analyst estimates to AI service
                         )
-                        initial_analysis["has_estimates_comparison"] = False
+                        initial_analysis["has_comprehensive_analysis"] = False
+                        initial_analysis["has_analyst_estimates"] = bool(analyst_estimates)
                     
                     # Extract generation metadata
                     generation_metadata = initial_analysis.pop("_generation_metadata", {})

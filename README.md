@@ -4,25 +4,31 @@ A comprehensive Gen AI-powered investment research platform that helps analysts 
 
 ## 🌟 Features
 
-- **Knowledge Base Management**: Upload and process PDF documents for 10-15 companies
-- **AI-Powered Report Generation**: Generate structured investment research reports using GPT-4o-mini
-- **Document Processing**: Automated PDF text extraction and chunking with PyPDF2
-- **Vector Search**: ChromaDB-powered similarity search for relevant context retrieval
-- **Interactive UI**: Modern React frontend with Material-UI components
-- **RESTful API**: Comprehensive Flask-based API with Swagger documentation
+- **Knowledge Base Management**: Upload and process PDF documents for 10-15 companies with automated refresh capabilities
+- **Advanced Document Analysis**: AI-powered analysis with thorough comparative analysis and quantitative variance detection
+- **Estimates Processing**: Sophisticated SVG parsing for analyst estimates data with automated balance sheet, income statement, and cash flow analysis
+- **Enhanced Comparative Analysis**: Deep quantitative comparison between new information and existing knowledge base with variance calculations
+- **AI-Powered Report Generation**: Generate structured investment research reports using GPT-4o-mini with comprehensive analytical insights
+- **Production-Ready UI**: TypeScript-safe React components with ReactMarkdown rendering and Material-UI design
+- **Document Processing**: Automated PDF text extraction and chunking with enhanced content analysis
+- **Vector Search**: ChromaDB-powered similarity search for relevant context retrieval with fallback data support
+- **Interactive Dashboard**: Modern responsive interface with real-time data display and professional styling
+- **Comprehensive API**: RESTful Flask-based API with Swagger documentation including estimates management endpoints
 
 ## 🏗️ Architecture
 
 ### Backend
 - **Framework**: Flask 2.3.3 with Flask-RESTX for API documentation
-- **Vector Database**: ChromaDB 0.4.15 (local deployment)
-- **Document Processing**: PyPDF2 3.0.1 for PDF text extraction
-- **AI Integration**: OpenAI GPT-4o-mini with text-embedding-ada-002
-- **Pipeline**: LangChain for RAG (Retrieval-Augmented Generation)
+- **Vector Database**: ChromaDB 0.4.15 (local deployment with processing state management)
+- **Document Processing**: PyPDF2 3.0.1 for PDF text extraction with enhanced content analysis
+- **Estimates Processing**: Custom SVG parser service for financial data extraction from analyst estimates
+- **AI Integration**: OpenAI GPT-4o-mini with text-embedding-ada-002 for comparative analysis and report generation
+- **Pipeline**: LangChain for RAG (Retrieval-Augmented Generation) with enhanced quantitative analysis
+- **Data Services**: Comprehensive document analysis, knowledge base management, and estimates data processing
 
 ### Frontend
-- **Framework**: React 18 with TypeScript support
-- **UI Library**: Material-UI 7.3.2
+- **Framework**: React 18 with TypeScript support and strict compilation safety
+- **UI Library**: Material-UI 7.3.2 with enhanced responsive design
 - **HTTP Client**: Axios for API communication
 - **Routing**: React Router for navigation
 - **File Upload**: React Dropzone for drag-and-drop uploads
@@ -36,13 +42,16 @@ ai_research_draft_generator/
 │   │   ├── __init__.py          # Flask app factory
 │   │   ├── config.py            # Configuration management
 │   │   ├── services/            # Core business logic
-│   │   │   ├── ai_service.py
-│   │   │   ├── database_service.py
-│   │   │   ├── document_service.py
-│   │   │   └── knowledge_base_service.py
+│   │   │   ├── ai_service.py           # Enhanced AI analysis with comparative capabilities
+│   │   │   ├── database_service.py     # ChromaDB vector database operations
+│   │   │   ├── document_service.py     # Document processing with quantitative analysis
+│   │   │   ├── enhanced_pdf_processor.py # Advanced PDF content extraction
+│   │   │   ├── estimates_parser.py     # SVG financial data parser service
+│   │   │   └── knowledge_base_service.py # Knowledge management with fallback data
 │   │   └── routes/              # API endpoints
 │   │       ├── company_routes.py
 │   │       ├── document_routes.py
+│   │       ├── estimates_routes.py     # New estimates management endpoints
 │   │       ├── knowledge_base_routes.py
 │   │       ├── report_routes.py
 │   │       └── health_routes.py
@@ -54,10 +63,14 @@ ai_research_draft_generator/
 │   │   │   ├── company/
 │   │   │   │   └── CompanyCard.jsx
 │   │   │   ├── document/
-│   │   │   │   └── DocumentUpload.jsx
+│   │   │   │   ├── DocumentUpload.jsx
+│   │   │   │   ├── DocumentAnalysisDisplay.tsx  # Enhanced analysis display
+│   │   │   │   └── CollectiveAnalysisDisplay.tsx # Comparative analysis UI
 │   │   │   ├── report/
 │   │   │   │   └── ReportGeneration.jsx
-│   │   │   └── Dashboard.jsx
+│   │   │   ├── common/
+│   │   │   │   └── MarkdownArrayRenderer.tsx    # TypeScript-safe rendering
+│   │   │   └── Dashboard.tsx
 │   │   ├── pages/
 │   │   │   └── CompanyDetail.jsx
 │   │   └── services/
@@ -171,10 +184,22 @@ const API_BASE_URL = 'http://localhost:5001/api';
 
 ## 📊 Features in Detail
 
-### Document Processing
-- **PDF Upload**: Drag-and-drop interface for PDF documents
-- **Text Extraction**: PyPDF2-based text extraction with error handling
-- **Chunking**: Intelligent text chunking for optimal vector search
+### Enhanced Document Processing
+- **PDF Upload**: Drag-and-drop interface for PDF documents with progress tracking
+- **Advanced Text Extraction**: PyPDF2-based extraction with enhanced content analysis and error handling
+- **Intelligent Chunking**: Optimized text chunking for vector search with context preservation
+- **Content Analysis**: Deep document analysis with quantitative variance detection
+
+### Comparative Analysis Engine
+- **Quantitative Analysis**: Precise variance calculations for financial metrics (revenue, margins, segments)
+- **Historical Comparison**: Thorough comparison against existing knowledge base with statistical analysis
+- **Estimates Integration**: Advanced SVG parsing for analyst estimates with balance sheet, income statement, and cash flow data
+- **Change Detection**: Automated identification of significant changes and new information
+
+### AI-Powered Insights
+- **Enhanced Prompting**: Sophisticated prompts for thorough comparative analysis with estimates context
+- **Fallback Data**: Robust estimates data fallback system for consistent analysis
+- **Contextual Generation**: Context-aware report generation with comprehensive analytical framework
 - **Duplicate Detection**: Hash-based duplicate document detection
 
 ### AI Report Generation

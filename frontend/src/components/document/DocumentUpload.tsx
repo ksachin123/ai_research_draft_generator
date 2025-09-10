@@ -56,8 +56,8 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const documentTypes = [
-    { value: '10-K', label: '10-K Annual Report' },
     { value: '10-Q', label: '10-Q Quarterly Report' },
+    { value: '10-K', label: '10-K Annual Report' },
     { value: '8-K', label: '8-K Current Report' },
     { value: 'earnings_call', label: 'Earnings Call Transcript' },
     { value: 'investor_presentation', label: 'Investor Presentation' },
