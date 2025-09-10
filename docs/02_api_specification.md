@@ -306,98 +306,9 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 ## 5. Estimates Management APIs
 
 ### 5.1 Refresh Estimates Data
-**Endpoint**: `POST /api/estimates/refresh/{ticker}`
+**Endpoint**: `POST /api/estimates/{ticker}/refresh`
 
-**Description**: Refresh estimates data for a specific company by parsing SVG financial data from uploaded documents.
-
-**Path Parameters**:
-- `ticker` (string): Company ticker symbol (e.g., "AAPL")
-
-**Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "ticker": "AAPL",
-    "estimates_refreshed": true,
-    "processing_status": "completed",
-    "parsed_data": {
-      "balance_sheet": {
-        "total_items": 15,
-        "actuals_count": 8,
-        "estimates_count": 7
-      },
-      "income_statement": {
-        "total_items": 12,
-        "actuals_count": 6,
-        "estimates_count": 6
-      },
-      "cash_flow": {
-        "total_items": 10,
-        "actuals_count": 5,
-        "estimates_count": 5
-      }
-    },
-    "refresh_timestamp": "2025-09-07T10:30:00Z"
-  }
-}
-```
-
-**Status Codes**:
-- `200`: Success
-- `404`: Company not found
-- `500`: Parsing error or server error
-
-### 5.2 Get Estimates Data
-**Endpoint**: `GET /api/estimates/data/{ticker}`
-
-**Description**: Retrieve current estimates data for a specific company with fallback support.
-
-**Path Parameters**:
-- `ticker` (string): Company ticker symbol (e.g., "AAPL")
-
-**Response**:
-```json
-{
-  "success": true,
-  "data": {
-    "ticker": "AAPL",
-    "has_estimates_data": true,
-    "data_source": "parsed_svg", // or "fallback_data"
-    "last_updated": "2025-09-07T10:30:00Z",
-    "financial_data": {
-      "balance_sheet": [
-        {
-          "item": "Total Revenue",
-          "type": "actual",
-          "value": 365817000000,
-          "period": "2024",
-          "currency": "USD"
-        },
-        {
-          "item": "Total Revenue",
-          "type": "estimate",
-          "value": 385000000000,
-          "period": "2025",
-          "currency": "USD"
-        }
-      ],
-      "income_statement": [...],
-      "cash_flow": [...]
-    }
-  }
-}
-```
-
-**Status Codes**:
-- `200`: Success
-- `404`: Company not found
-- `500`: Server error
-
-### 5.3 Parse SVG Document
-**Endpoint**: `POST /api/estimates/parse/{ticker}`
-
-**Description**: Parse SVG financial data from a specific document for estimates extraction.
+**Description**: Refresh estimates data for a specific company by parsing SVG financial statements and analyst estimates from the estimates folder.
 
 **Path Parameters**:
 - `ticker` (string): Company ticker symbol (e.g., "AAPL")
@@ -405,12 +316,7 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 **Request Body**:
 ```json
 {
-  "document_path": "path/to/document.pdf",
-  "parse_options": {
-    "include_balance_sheet": true,
-    "include_income_statement": true,
-    "include_cash_flow": true
-  }
+  "force_reprocess": false
 }
 ```
 
@@ -418,26 +324,234 @@ The AI Research Draft Generator exposes RESTful APIs for knowledge base manageme
 ```json
 {
   "success": true,
-  "data": {
-    "ticker": "AAPL",
-    "document_parsed": true,
-    "parsed_sections": ["balance_sheet", "income_statement", "cash_flow"],
-    "extraction_results": {
-      "total_data_points": 37,
-      "actuals_extracted": 19,
-      "estimates_extracted": 18,
-      "parsing_errors": 0
+  "ticker": "AAPL",
+  "result": {
+    "estimates_refreshed": true,
+    "processing_status": "completed",
+    "files_processed": [
+      "BalanceSheet.svg",
+      "CashFlow.svg", 
+      "IncomeStatement.svg"
+    ],
+    "parsed_data": {
+      "balance_sheet": {
+        "segments_found": 0,
+        "margins_found": 0,
+        "quarterly_entries": 15
+      },
+      "cash_flow": {
+        "segments_found": 0,
+        "margins_found": 0, 
+        "quarterly_entries": 18
+      },
+      "income_statement": {
+        "segments_found": 5,
+        "margins_found": 2,
+        "quarterly_entries": 17
+      }
     },
-    "timestamp": "2025-09-07T10:30:00Z"
+    "last_updated": "2025-09-10T15:30:00Z"
+  },
+  "message": "Estimates data refreshed successfully for AAPL"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: Company estimates folder not found
+- `500`: Parsing error or server error
+
+### 5.2 Get Estimates Data
+**Endpoint**: `GET /api/estimates/{ticker}/data`
+
+**Description**: Retrieve current estimates data for a specific company from processed SVG financial statements.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "ticker": "AAPL",
+  "last_updated": "2025-09-10T15:30:00Z",
+  "financial_statements": {
+    "balance_sheet": {
+      "segment_data": {},
+      "margins": {},
+      "quarterly_data": [],
+      "estimates": {}
+    },
+    "cash_flow": {
+      "segment_data": {},
+      "margins": {},
+      "quarterly_data": [],
+      "estimates": {}
+    },
+    "income_statement": {
+      "segment_data": {
+        "iPhone": {"Dec-23": 69.7, "Mar-24": 50.1, "2024A": 200.6},
+        "iPad": {"Dec-23": 7.0, "Mar-24": 5.6, "2024A": 24.1},
+        "Services": {"Dec-23": 23.1, "Mar-24": 23.9, "2024A": 96.2}
+      },
+      "margins": {
+        "gross_margin": {"Dec-23": 45.9, "Mar-24": 46.6, "2024A": 45.6}
+      },
+      "quarterly_data": [
+        {"period": "Dec-23", "revenue": 119.6, "gross_margin": 45.9},
+        {"period": "Mar-24", "revenue": 90.8, "gross_margin": 46.6}
+      ],
+      "estimates": {
+        "2025E": {"revenue": 406.8, "gross_margin": 45.2},
+        "2026E": {"revenue": 423.9, "gross_margin": 45.5}
+      }
+    }
   }
 }
 ```
 
 **Status Codes**:
 - `200`: Success
-- `400`: Invalid document or parsing options
-- `404`: Company or document not found
-- `500`: Parsing error or server error
+- `404`: Company estimates data not found
+- `500`: Server error
+
+### 5.3 Generate Comparative Analysis
+**Endpoint**: `POST /api/estimates/{ticker}/compare`
+
+**Description**: Generate comprehensive comparative analysis between uploaded document and existing estimates data with quantitative variance analysis.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Request Body**:
+```json
+{
+  "document_text": "Apple reported Q3 2024 revenue of $85.8 billion, beating estimates of $84.4 billion. iPhone revenue was $39.3 billion vs estimates of $38.9 billion. Services revenue reached $24.2 billion, ahead of the $24.0 billion estimate. Gross margin came in at 46.3%, above the 46.0% estimate.",
+  "document_date": "2024-08-01T00:00:00Z",
+  "analysis_type": "comparative"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "ticker": "AAPL",
+  "analysis": {
+    "summary": "Comprehensive analysis comparing Q3 2024 results against analyst estimates shows beats across key metrics...",
+    "quantitative_variance": {
+      "total_revenue": {
+        "actual": 85.8,
+        "estimate": 84.4,
+        "variance": 1.4,
+        "variance_pct": 1.66,
+        "direction": "beat"
+      },
+      "iphone_revenue": {
+        "actual": 39.3,
+        "estimate": 38.9,
+        "variance": 0.4,
+        "variance_pct": 1.03,
+        "direction": "beat"
+      },
+      "services_revenue": {
+        "actual": 24.2,
+        "estimate": 24.0,
+        "variance": 0.2,
+        "variance_pct": 0.83,
+        "direction": "beat"
+      },
+      "gross_margin": {
+        "actual": 46.3,
+        "estimate": 46.0,
+        "variance": 0.3,
+        "variance_bp": 30,
+        "direction": "beat"
+      }
+    },
+    "investment_implications": "Results validate our investment thesis around Services growth acceleration and margin expansion...",
+    "estimates_integration": "Analysis incorporates Q3 actuals vs consensus estimates with detailed segment-level variance analysis"
+  },
+  "message": "Comparative analysis generated successfully"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `400`: Invalid request or missing document text
+- `404`: Company not found
+- `500`: Analysis generation error
+
+### 5.4 Get Current Quarter Estimates
+**Endpoint**: `GET /api/estimates/{ticker}/current-quarter`
+
+**Description**: Get current quarter estimates data for AI analysis integration.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Query Parameters**:
+- `target_date` (string, optional): Target date in ISO format (default: current date)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "target_quarter": "Q2 2025",
+    "estimates_data": {
+      "revenue": {
+        "estimate": 94500,
+        "currency": "USD_millions",
+        "period": "Jun-25"
+      },
+      "segments": {
+        "iPhone": {"estimate": 42100, "period": "Jun-25"},
+        "Services": {"estimate": 24800, "period": "Jun-25"}
+      },
+      "margins": {
+        "gross_margin": {"estimate": 45.8, "unit": "percent", "period": "Jun-25"}
+      }
+    },
+    "data_freshness": "2025-09-10T15:30:00Z"
+  },
+  "message": "Current quarter estimates retrieved successfully",
+  "timestamp": "2025-09-10T16:00:00Z"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: No current quarter estimates available
+- `500`: Server error
+
+### 5.5 Get Current Quarter Estimates (AI Format)
+**Endpoint**: `GET /api/estimates/{ticker}/current-quarter/ai-format`
+
+**Description**: Get current quarter estimates formatted specifically for AI prompt integration with structured text output.
+
+**Path Parameters**:
+- `ticker` (string): Company ticker symbol (e.g., "AAPL")
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticker": "AAPL",
+    "ai_formatted_text": "Current Quarter Estimates for AAPL (Q2 2025 ending Jun-25):\n\nRevenue Estimates:\n- Total Revenue: $94,500M\n- iPhone: $42,100M\n- Services: $24,800M\n\nMargin Estimates:\n- Gross Margin: 45.8%\n\nNote: Estimates data as of 2025-09-10T15:30:00Z",
+    "text_length": 245,
+    "ready_for_prompt": true
+  },
+  "message": "AI-formatted current quarter estimates for AAPL retrieved successfully",
+  "timestamp": "2025-09-10T16:00:00Z"
+}
+```
+
+**Status Codes**:
+- `200`: Success
+- `404`: No AI-formatted estimates available
+- `500`: Server error
 
 ## 6. Report Generation APIs
 

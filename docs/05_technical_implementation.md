@@ -54,6 +54,11 @@ werkzeug==2.3.7
 beautifulsoup4==4.12.2  # For enhanced HTML/SVG parsing
 xml-python==0.1.0       # For SVG processing
 lxml==4.9.3              # XML/HTML parser for estimates_parser
+
+# Additional dependencies for financial data processing
+xmltodict==0.12.0        # XML to dict conversion for SVG parsing
+pandas==2.0.3            # Data manipulation for financial analysis
+numpy==1.24.3            # Numerical operations for variance calculations
 ```
 
 ### 3.2 Configuration Management
@@ -127,7 +132,7 @@ from logging.handlers import RotatingFileHandler
 import os
 
 from app.config import config
-from app.routes import company_bp, knowledge_base_bp, document_bp, report_bp, health_bp
+from app.routes import company_bp, knowledge_base_bp, document_bp, report_bp, health_bp, estimates_bp
 
 def create_app(config_name=None):
     app = Flask(__name__)
@@ -144,7 +149,7 @@ def create_app(config_name=None):
         app,
         version='1.0',
         title='AI Research Draft Generator API',
-        description='REST API for investment research draft generation',
+        description='REST API for investment research draft generation with financial estimates processing',
         doc='/swagger/'
     )
     
@@ -153,6 +158,7 @@ def create_app(config_name=None):
     api.add_namespace(knowledge_base_bp, path='/api')
     api.add_namespace(document_bp, path='/api')
     api.add_namespace(report_bp, path='/api')
+    api.add_namespace(estimates_bp, path='/api/estimates')
     api.add_namespace(health_bp, path='/api')
     
     # Configure Logging
@@ -822,7 +828,11 @@ def _extract_segment_variance(self, content, estimates_data):
     # Implementation for segment-level analysis
 ```
 
-### 3.6a Estimates Processing Service
+### 3.6a Enhanced Financial Data Processing Suite
+
+The system includes a comprehensive suite of SVG financial parsers for processing complex financial statements and analyst estimates data.
+
+#### Core SVG Financial Parser Service
 
 **File**: `backend/app/services/estimates_parser.py`
 ```python
@@ -844,24 +854,27 @@ logger = logging.getLogger(__name__)
 
 class SVGFinancialParser:
     """Parser for extracting financial data from SVG files."""
-    
-    def __init__(self):
+
+    def __init__(self, config):
         self.namespace = {'svg': 'http://www.w3.org/2000/svg'}
+        self.config = config
     
     def parse_estimates_folder(self, ticker: str) -> Dict[str, Any]:
         """
         Parse all SVG files in the estimates folder for a given ticker.
         
-        Args:
-            ticker: Stock ticker symbol
-            
-        Returns:
-            Dictionary containing parsed financial data from all statements
+        Processes BalanceSheet.svg, CashFlow.svg, and IncomeStatement.svg files
+        to extract structured financial data including segments, margins, and estimates.
         """
-        estimates_path = f"data/research/{ticker}/estimates"
+        estimates_path = os.path.join(self.config.DATA_ROOT_PATH, 'research', ticker, 'estimates')
         
         if not os.path.exists(estimates_path):
-            logger.warning(f"Estimates folder not found for {ticker}: {estimates_path}")
+            logger.warning(f"[SVG_PARSER][{ticker}] Estimates folder not found: {estimates_path}")
+            return {}
+        
+        svg_files = [f for f in os.listdir(estimates_path) if f.endswith('.svg')]
+        if not svg_files:
+            logger.warning(f"[SVG_PARSER][{ticker}] No SVG files found in estimates folder")
             return {}
         
         estimates_data = {
@@ -872,27 +885,266 @@ class SVGFinancialParser:
             'income_statement': {}
         }
         
-        # Parse each financial statement
-        for filename in os.listdir(estimates_path):
-            if filename.endswith('.svg'):
-                file_path = os.path.join(estimates_path, filename)
+        logger.info(f"[SVG_PARSER][{ticker}] Found {len(svg_files)} SVG files: {svg_files}")
+        
+        for filename in svg_files:
+            file_path = os.path.join(estimates_path, filename)
+            
+            try:
+                logger.debug(f"[SVG_PARSER][{ticker}] Processing file: {filename}")
+                if 'BalanceSheet' in filename:
+                    estimates_data['balance_sheet'] = self._parse_svg_file(file_path, 'balance_sheet')
+                elif 'CashFlow' in filename:
+                    estimates_data['cash_flow'] = self._parse_svg_file(file_path, 'cash_flow')
+                elif 'IncomeStatement' in filename:
+                    estimates_data['income_statement'] = self._parse_svg_file(file_path, 'income_statement')
+                    
+                # Update last modified time
+                file_mtime = os.path.getmtime(file_path)
+                if not estimates_data['last_updated'] or file_mtime > estimates_data['last_updated']:
+                    estimates_data['last_updated'] = file_mtime
+                    
+                # Log parsing results
+                if 'balance_sheet' in estimates_data and estimates_data['balance_sheet']:
+                    statement_data = estimates_data['balance_sheet']
+                    segments = len(statement_data.get('segment_data', {}))
+                    margins = len(statement_data.get('margins', {}))
+                    quarterly = len(statement_data.get('quarterly_data', []))
+                    logger.info(f"[SVG_PARSER][{ticker}] balance_sheet: {segments} segments, {margins} margins, {quarterly} quarterly entries")
+                    
+            except Exception as e:
+                logger.error(f"[SVG_PARSER][{ticker}] Error parsing {filename}: {str(e)}")
+                continue
+        
+        logger.info(f"[SVG_PARSER][{ticker}] Completed parsing. Last updated: {estimates_data.get('last_updated')}")
+        return estimates_data
+
+    def _extract_text_elements(self, root) -> List[Dict[str, Any]]:
+        """Extract all text elements from SVG with their positions and content."""
+        text_elements = []
+        element_count = 0
+        
+        logger.debug("[SVG_PARSER] Starting text element extraction")
+        
+        # Find all text elements
+        for text_elem in root.iter('{http://www.w3.org/2000/svg}text'):
+            # Get text content
+            tspan = text_elem.find('{http://www.w3.org/2000/svg}tspan')
+            if tspan is not None and tspan.text:
+                content = tspan.text.strip()
                 
-                try:
-                    if 'BalanceSheet' in filename:
-                        estimates_data['balance_sheet'] = self._parse_svg_file(file_path, 'balance_sheet')
-                    elif 'CashFlow' in filename:
-                        estimates_data['cash_flow'] = self._parse_svg_file(file_path, 'cash_flow')
-                    elif 'IncomeStatement' in filename:
-                        estimates_data['income_statement'] = self._parse_svg_file(file_path, 'income_statement')
-                        
-                    # Update last modified time
-                    file_mtime = os.path.getmtime(file_path)
-                    if not estimates_data['last_updated'] or file_mtime > estimates_data['last_updated']:
-                        estimates_data['last_updated'] = file_mtime
-                        
-                except Exception as e:
-                    logger.error(f"Error parsing {filename}: {str(e)}")
-                    continue
+                # Get position from transform attribute
+                transform = text_elem.get('transform', '')
+                position = self._extract_position_from_transform(transform)
+                
+                # Get styling information
+                style = text_elem.get('style', '')
+                font_weight = 'bold' if 'font-weight:bold' in style else 'normal'
+                
+                text_elements.append({
+                    'content': content,
+                    'position': position,
+                    'font_weight': font_weight,
+                    'is_percentage': '%' in content,
+                    'is_currency': '$' in content or 'M' in content,
+                    'is_number': self._is_numeric_value(content)
+                })
+                
+                element_count += 1
+        
+        # Sort by vertical position (y coordinate) to maintain reading order
+        text_elements.sort(key=lambda x: (-x['position']['y'], x['position']['x']))
+        
+        logger.debug(f"[SVG_PARSER] Extracted {element_count} text elements")
+        return text_elements
+```
+
+#### Specialized Financial Statement Parsers
+
+The system includes specialized parsers for each type of financial statement:
+
+**Balance Sheet Parser** (`balance_sheet_parser.py`):
+- Extracts assets, liabilities, and equity data
+- Processes multiple time periods (17 periods found in testing)
+- Handles 15+ financial metrics including cash, investments, receivables
+
+**Cash Flow Parser** (`cash_flow_parser.py`):
+- Processes operating, investing, and financing activities
+- Extracts 27+ financial metrics across 18 periods
+- Calculates free cash flow and variance analysis
+
+**Income Statement Parser** (`income_statement_parser.py`):
+- Handles revenue recognition and segment performance
+- Processes margin data and profitability metrics
+- Extracts segment data (iPhone, iPad, Mac, Services)
+
+**Margin Analysis Parser** (`margin_analysis_parser.py`):
+- Focuses on product-specific margins and trends
+- Extracts gross margin, operating margin data
+- Processes 8+ margin metrics across 20 periods
+
+#### Enhanced SVG Parser Integration
+
+**File**: `backend/app/services/enhanced_svg_parser.py`
+```python
+"""
+Enhanced SVG Financial Parser Service - App Integration
+
+This service integrates with the standalone enhanced parser to provide
+financial data for the knowledge base.
+"""
+
+import os
+import sys
+from datetime import datetime
+from typing import Optional
+
+# Add the backend directory to access standalone parser
+backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, backend_dir)
+
+from standalone_enhanced_parser import create_standalone_parser
+
+class EnhancedSVGFinancialParser:
+    """App-level wrapper for the enhanced financial parser."""
+
+    def __init__(self, config):
+        self.config = config
+        self.parser = create_standalone_parser(config.DATA_ROOT_PATH)
+        
+    def parse_financial_statements(self, ticker: str):
+        """Parse financial statements using the standalone parser."""
+        return self.parser.parse_financial_statements(ticker)
+    
+    def get_current_quarter_estimates(self, ticker: str, target_date: Optional[datetime] = None):
+        """Get current quarter estimates for a ticker."""
+        return self.parser.extract_current_quarter_estimates(
+            self.parser.parse_financial_statements(ticker), target_date
+        )
+    
+    def get_current_quarter_estimates_for_ai(self, ticker: str, target_date: Optional[datetime] = None):
+        """Get current quarter estimates formatted for AI prompts."""
+        return self.parser.get_current_quarter_estimates_for_ai(ticker, target_date)
+
+def create_enhanced_financial_parser(config):
+    """Factory function to create the enhanced financial parser."""
+    return EnhancedSVGFinancialParser(config)
+```
+
+#### Current Quarter Estimates Extractor
+
+**File**: `backend/current_quarter_estimates_extractor.py`
+```python
+"""
+Current Quarter Estimates Extractor
+
+This module provides functionality to extract current quarter estimates 
+from parsed financial data for AI prompt integration.
+"""
+
+from datetime import datetime, date
+from typing import Dict, List, Optional, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+class CurrentQuarterEstimatesExtractor:
+    """Extracts current quarter estimates from financial data."""
+    
+    def extract_current_quarter_estimates(self, financial_data: Dict[str, Any], 
+                                        target_date: Optional[datetime] = None) -> Dict[str, Any]:
+        """
+        Extract current quarter estimates from comprehensive financial data.
+        
+        Args:
+            financial_data: Complete financial data from enhanced parser
+            target_date: Target date for quarter determination (default: current date)
+            
+        Returns:
+            Dictionary containing current quarter estimates
+        """
+        if target_date is None:
+            target_date = datetime.now()
+            
+        # Determine target quarter
+        target_quarter = self._get_target_quarter(target_date)
+        
+        estimates = {
+            'ticker': financial_data.get('ticker', 'UNKNOWN'),
+            'target_quarter': target_quarter,
+            'target_date': target_date.isoformat(),
+            'revenue_estimates': {},
+            'segment_estimates': {},
+            'margin_estimates': {},
+            'data_source': 'enhanced_parser',
+            'extraction_timestamp': datetime.now().isoformat()
+        }
+        
+        # Extract revenue estimates
+        revenue_data = self._extract_revenue_estimates(financial_data, target_quarter)
+        if revenue_data:
+            estimates['revenue_estimates'] = revenue_data
+            
+        # Extract segment estimates 
+        segment_data = self._extract_segment_estimates(financial_data, target_quarter)
+        if segment_data:
+            estimates['segment_estimates'] = segment_data
+            
+        # Extract margin estimates
+        margin_data = self._extract_margin_estimates(financial_data, target_quarter)
+        if margin_data:
+            estimates['margin_estimates'] = margin_data
+            
+        return estimates
+
+    def get_current_quarter_estimates_for_ai(self, ticker: str, target_date: Optional[datetime] = None) -> str:
+        """
+        Get current quarter estimates formatted for AI prompt integration.
+        
+        Returns:
+            Formatted text string ready for AI prompts
+        """
+        try:
+            financial_data = self.parse_financial_statements(ticker)
+            estimates = self.extract_current_quarter_estimates(financial_data, target_date)
+            
+            if not estimates or not any([estimates.get('revenue_estimates'), 
+                                       estimates.get('segment_estimates'), 
+                                       estimates.get('margin_estimates')]):
+                return f"Error: No current quarter estimates available for {ticker}"
+            
+            # Format for AI consumption
+            formatted_text = f"Current Quarter Estimates for {ticker} ({estimates['target_quarter']}):\n\n"
+            
+            # Revenue estimates
+            if estimates.get('revenue_estimates'):
+                formatted_text += "Revenue Estimates:\n"
+                for metric, value in estimates['revenue_estimates'].items():
+                    formatted_text += f"- {metric}: {value}\n"
+                formatted_text += "\n"
+            
+            # Segment estimates  
+            if estimates.get('segment_estimates'):
+                formatted_text += "Segment Estimates:\n"
+                for segment, value in estimates['segment_estimates'].items():
+                    formatted_text += f"- {segment}: {value}\n"
+                formatted_text += "\n"
+                
+            # Margin estimates
+            if estimates.get('margin_estimates'):
+                formatted_text += "Margin Estimates:\n"
+                for metric, value in estimates['margin_estimates'].items():
+                    formatted_text += f"- {metric}: {value}\n"
+                formatted_text += "\n"
+                
+            formatted_text += f"Note: Estimates data as of {estimates['extraction_timestamp'][:10]}"
+            
+            return formatted_text
+            
+        except Exception as e:
+            logger.error(f"Error formatting AI estimates for {ticker}: {str(e)}")
+            return f"Error: Failed to format estimates for {ticker} - {str(e)}"
+```
         
         return estimates_data
     
