@@ -39,6 +39,7 @@ def create_app(config_name=None):
     from app.routes.report_routes import report_bp
     from app.routes.health_routes import health_bp
     from app.routes.estimates_routes import estimates_bp
+    from app.routes.batch_routes import batch_bp
     
     api.add_namespace(company_bp, path='/api/companies')
     api.add_namespace(knowledge_base_bp, path='/api')
@@ -46,6 +47,7 @@ def create_app(config_name=None):
     api.add_namespace(report_bp, path='/api')
     api.add_namespace(health_bp, path='/api')
     api.add_namespace(estimates_bp, path='/api/estimates')
+    api.add_namespace(batch_bp, path='/api')
     
     # Configure Logging
     configure_logging(app)

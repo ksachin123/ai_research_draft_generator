@@ -17,18 +17,18 @@ import {
 import {
   ArrowBack as BackIcon,
   Business as BusinessIcon,
-  Assessment as ReportsIcon,
   CloudUpload as UploadIcon,
-  AutoAwesome as GenerateIcon,
   Refresh as RefreshIcon,
-  Storage as KnowledgeBaseIcon
+  Storage as KnowledgeBaseIcon,
+  BatchPrediction as BatchIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import DocumentUpload from '../components/document/DocumentUpload';
-import ReportGeneration from '../components/report/ReportGeneration';
 import KnowledgeBaseContent from '../components/KnowledgeBaseContent';
+import BatchManager from '../components/batch/BatchManager';
 import { companyService } from '../services/companyService';
 import { Document as UploadedDocument } from '../services/documentService';
+import { Batch } from '../services/batchService';
 
 // Type definitions
 interface Company {
@@ -48,6 +48,7 @@ interface Document {
   file_size: number;
   upload_date: string;
   processing_status: string;
+  analysis_date?: string;
 }
 
 interface Report {
@@ -66,6 +67,8 @@ const CompanyDetail: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [hasNewAnalysis, setHasNewAnalysis] = useState<boolean>(false);
+  const [currentBatch, setCurrentBatch] = useState<Batch | null>(null);
 
   const loadCompanyDetails = useCallback(async (): Promise<void> => {
     if (!ticker) return;
@@ -83,6 +86,17 @@ const CompanyDetail: React.FC = () => {
       setCompany(companyResponse.data);
       setDocuments(documentsResponse.data.documents || []);
       setReports(reportsResponse.data.reports || []);
+      
+      // Check for recent analysis (within last hour)
+      const hasRecentAnalysis = documentsResponse.data.documents?.some((doc: Document) => {
+        if (doc.analysis_date) {
+          const analysisTime = new Date(doc.analysis_date).getTime();
+          const oneHourAgo = Date.now() - (60 * 60 * 1000);
+          return analysisTime > oneHourAgo;
+        }
+        return false;
+      });
+      setHasNewAnalysis(hasRecentAnalysis || false);
     } catch (err: any) {
       console.error('Failed to load company details:', err);
       setError('Failed to load company details. Please try again.');
@@ -125,6 +139,23 @@ const CompanyDetail: React.FC = () => {
       setCompany(companyResponse.data);
       setDocuments(documentsResponse.data.documents || []);
       setReports(reportsResponse.data.reports || []);
+      
+      // Check for recent analysis and potentially switch to upload tab to see results
+      const hasRecentAnalysis = documentsResponse.data.documents?.some((doc: Document) => {
+        if (doc.analysis_date) {
+          const analysisTime = new Date(doc.analysis_date).getTime();
+          const oneHourAgo = Date.now() - (60 * 60 * 1000);
+          return analysisTime > oneHourAgo;
+        }
+        return false;
+      });
+      
+      if (hasRecentAnalysis && !hasNewAnalysis) {
+        setHasNewAnalysis(true);
+        // Optional: Auto-switch to upload tab to show analysis results
+        // setActiveTab(0);
+      }
+      
       console.log('Company data refreshed successfully');
     } catch (err: any) {
       console.error('Failed to refresh data after upload:', err);
@@ -132,8 +163,18 @@ const CompanyDetail: React.FC = () => {
     }
   };
 
+  const handleBatchCreated = (batch: Batch) => {
+    setCurrentBatch(batch);
+    // Optionally auto-switch to analysis tab
+    // setActiveTab(1);
+  };
+
   const handleTabChange = (event: React.SyntheticEvent, newValue: number): void => {
     setActiveTab(newValue);
+    // Clear new analysis indicator when user visits upload tab
+    if (newValue === 0 && hasNewAnalysis) {
+      setHasNewAnalysis(false);
+    }
   };
 
   const getStatusColor = (status: string): 'success' | 'warning' | 'error' | 'default' => {
@@ -265,17 +306,24 @@ const CompanyDetail: React.FC = () => {
             >
               <Tab 
                 icon={<UploadIcon />} 
-                label="Upload Documents" 
+                label={
+                  <Box sx={{ position: 'relative' }}>
+                    Upload Documents
+                    {hasNewAnalysis && (
+                      <Chip 
+                        label="New Analysis!" 
+                        color="primary" 
+                        size="small" 
+                        sx={{ ml: 1, fontSize: '0.7rem', height: '20px' }} 
+                      />
+                    )}
+                  </Box>
+                }
                 iconPosition="start"
               />
               <Tab 
-                icon={<GenerateIcon />} 
-                label="Generate Report" 
-                iconPosition="start"
-              />
-              <Tab 
-                icon={<ReportsIcon />} 
-                label="View Reports" 
+                icon={<BatchIcon />} 
+                label="Analysis" 
                 iconPosition="start"
               />
               <Tab 
@@ -291,100 +339,17 @@ const CompanyDetail: React.FC = () => {
               <DocumentUpload 
                 ticker={ticker!}
                 onUploadComplete={handleUploadSuccess}
+                onBatchCreated={handleBatchCreated}
               />
             )}
 
             {activeTab === 1 && (
-              <ReportGeneration 
-                companyTicker={ticker!}
-                companyName={company.company_name}
+              <BatchManager 
+                ticker={ticker!}
               />
             )}
 
             {activeTab === 2 && (
-              <Box>
-                <Typography variant="h6" gutterBottom>
-                  Document Library
-                </Typography>
-                {documents.length === 0 ? (
-                  <Box textAlign="center" py={4}>
-                    <ReportsIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
-                      No documents uploaded
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" mb={3}>
-                      Upload PDF documents to build the knowledge base for this company.
-                    </Typography>
-                    <Button
-                      variant="contained"
-                      startIcon={<UploadIcon />}
-                      onClick={() => setActiveTab(0)}
-                    >
-                      Upload Documents
-                    </Button>
-                  </Box>
-                ) : (
-                  <Box display="flex" flexDirection="column" gap={2}>
-                    {documents.map((doc, index) => (
-                      <Box key={index}>
-                        <Card variant="outlined">
-                          <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems="start">
-                              <Box flexGrow={1}>
-                                <Typography variant="subtitle1" gutterBottom>
-                                  {doc.filename}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Size: {(doc.file_size / 1024 / 1024).toFixed(2)} MB
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  Uploaded: {format(new Date(doc.upload_date), 'PPP p')}
-                                </Typography>
-                              </Box>
-                              <Chip
-                                label={doc.processing_status?.toUpperCase() || 'UNKNOWN'}
-                                color={getStatusColor(doc.processing_status)}
-                                size="small"
-                              />
-                            </Box>
-                          </CardContent>
-                        </Card>
-                      </Box>
-                    ))}
-                  </Box>
-                )}
-
-                {reports.length > 0 && (
-                  <>
-                    <Divider sx={{ my: 3 }} />
-                    <Typography variant="h6" gutterBottom>
-                      Generated Reports
-                    </Typography>
-                    <Box display="flex" flexDirection="column" gap={2}>
-                      {reports.map((report, index) => (
-                        <Box key={index}>
-                          <Card variant="outlined">
-                            <CardContent>
-                              <Typography variant="subtitle1" gutterBottom>
-                                {report.title || `Report ${index + 1}`}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Type: {report.report_type?.toUpperCase() || 'UNKNOWN'}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                Generated: {format(new Date(report.created_at), 'PPP p')}
-                              </Typography>
-                            </CardContent>
-                          </Card>
-                        </Box>
-                      ))}
-                    </Box>
-                  </>
-                )}
-              </Box>
-            )}
-
-            {activeTab === 3 && (
               <KnowledgeBaseContent ticker={ticker!} />
             )}
           </CardContent>

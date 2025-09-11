@@ -10,11 +10,6 @@ import {
   Grid,
   Alert,
   CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   List,
   ListItem,
   ListItemText,
@@ -24,7 +19,6 @@ import {
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
-  Edit as EditIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Source as SourceIcon,
@@ -35,19 +29,16 @@ import { documentService, DocumentAnalysis } from '../../services/documentServic
 interface AnalysisReviewProps {
   ticker: string;
   uploadId: string;
-  onAnalysisApproved: () => void;
   onClose?: () => void;
 }
 
 const AnalysisReview: React.FC<AnalysisReviewProps> = ({
   ticker,
   uploadId,
-  onAnalysisApproved,
   onClose
 }) => {
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
-  const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     summary: true,
@@ -60,8 +51,6 @@ const AnalysisReview: React.FC<AnalysisReviewProps> = ({
     forward: false,
     attention: false
   });
-  const [showModifyDialog, setShowModifyDialog] = useState(false);
-  const [modificationNotes, setModificationNotes] = useState('');
 
   useEffect(() => {
     loadAnalysis();
@@ -76,41 +65,6 @@ const AnalysisReview: React.FC<AnalysisReviewProps> = ({
     } catch (err: any) {
       console.error('Failed to load analysis:', err);
       setError(err.response?.data?.error?.message || 'Failed to load analysis results');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApproveAnalysis = async () => {
-    try {
-      setApproving(true);
-      await documentService.approveAnalysis(ticker, uploadId, {
-        notes: modificationNotes || 'Analysis approved for detailed report generation'
-      });
-      onAnalysisApproved();
-    } catch (err: any) {
-      console.error('Failed to approve analysis:', err);
-      setError(err.response?.data?.error?.message || 'Failed to approve analysis');
-    } finally {
-      setApproving(false);
-    }
-  };
-
-  const handleModifyAnalysis = () => {
-    setShowModifyDialog(true);
-  };
-
-  const handleRegenerateAnalysis = async () => {
-    try {
-      setLoading(true);
-      await documentService.modifyAnalysis(ticker, uploadId, {
-        regenerate: true
-      });
-      await loadAnalysis();
-      setShowModifyDialog(false);
-    } catch (err: any) {
-      console.error('Failed to regenerate analysis:', err);
-      setError(err.response?.data?.error?.message || 'Failed to regenerate analysis');
     } finally {
       setLoading(false);
     }
@@ -190,23 +144,14 @@ const AnalysisReview: React.FC<AnalysisReviewProps> = ({
               </Box>
             </Box>
             <Box sx={{ textAlign: 'right' }}>
-              <Button
-                variant="outlined"
-                startIcon={<EditIcon />}
-                onClick={handleModifyAnalysis}
-                sx={{ mr: 1 }}
-              >
-                Modify
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<CheckCircleIcon />}
-                onClick={handleApproveAnalysis}
-                disabled={approving}
-                color="success"
-              >
-                {approving ? <CircularProgress size={20} /> : 'Approve & Generate Report'}
-              </Button>
+              {onClose && (
+                <Button
+                  variant="outlined"
+                  onClick={onClose}
+                >
+                  Close
+                </Button>
+              )}
             </Box>
           </Box>
         </CardContent>
@@ -469,34 +414,6 @@ const AnalysisReview: React.FC<AnalysisReviewProps> = ({
           </CardContent>
         </Card>
       )}
-
-      {/* Modification Dialog */}
-      <Dialog open={showModifyDialog} onClose={() => setShowModifyDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Modify Analysis</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            You can add notes for the detailed report generation or regenerate the analysis with different parameters.
-          </Typography>
-          <TextField
-            label="Additional Notes"
-            multiline
-            rows={4}
-            fullWidth
-            value={modificationNotes}
-            onChange={(e) => setModificationNotes(e.target.value)}
-            placeholder="Add any specific focus areas or modifications for the detailed report..."
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowModifyDialog(false)}>Cancel</Button>
-          <Button onClick={handleRegenerateAnalysis} variant="outlined">
-            Regenerate Analysis
-          </Button>
-          <Button onClick={() => setShowModifyDialog(false)} variant="contained">
-            Save Notes
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

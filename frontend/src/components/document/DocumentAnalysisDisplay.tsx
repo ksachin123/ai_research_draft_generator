@@ -31,18 +31,30 @@ import { DocumentAnalysis } from '../../services/documentService';
 interface DocumentAnalysisDisplayProps {
   analysis: DocumentAnalysis;
   onClose?: () => void;
-  onApprove?: (uploadId: string) => void;
   ticker: string;
 }
 
 const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({ 
   analysis, 
   onClose,
-  onApprove,
   ticker 
 }) => {
   const [showPrompt, setShowPrompt] = useState(false);
-  const [approving, setApproving] = useState(false);
+
+  // Helper function to get generation metadata from either location
+  const getGenerationMetadata = () => {
+    // Check if generation_metadata is within analysis.analysis (nested structure)
+    if (analysis.analysis?.generation_metadata) {
+      return analysis.analysis.generation_metadata;
+    }
+    // Check if generation_metadata is at the top level (flat structure)
+    if (analysis.generation_metadata) {
+      return analysis.generation_metadata;
+    }
+    return null;
+  };
+
+  const generationMetadata = getGenerationMetadata();
 
   // Helper function to check if comparative analysis data is available
   const hasComparativeAnalysis = () => {
@@ -59,25 +71,10 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
     );
   };
 
-  const handleApprove = async () => {
-    if (onApprove && analysis.upload_id) {
-      setApproving(true);
-      try {
-        await onApprove(analysis.upload_id);
-      } catch (error) {
-        console.error('Failed to approve analysis:', error);
-      } finally {
-        setApproving(false);
-      }
-    }
-  };
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'analysis_ready':
         return 'success';
-      case 'analysis_approved':
-        return 'primary';
       case 'analysis_error':
         return 'error';
       default:
@@ -423,17 +420,6 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            {analysis.status === 'analysis_ready' && onApprove && (
-              <Button 
-                onClick={handleApprove} 
-                variant="contained" 
-                size="small"
-                disabled={approving}
-                color="primary"
-              >
-                {approving ? 'Approving...' : 'Approve Analysis'}
-              </Button>
-            )}
             {onClose && (
               <Button onClick={onClose} variant="outlined" size="small">
                 Close
@@ -786,7 +772,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
             )}
 
             {/* Enhanced Analyst Estimates Indicator */}
-            {analysis.generation_metadata?.analyst_estimates_included && (
+            {generationMetadata?.analyst_estimates_included && (
               <Paper sx={{ p: 1, mb: 2, bgcolor: 'info.light', color: 'info.contrastText', display: 'flex', alignItems: 'center' }}>
                 <Timeline sx={{ mr: 1 }} />
                 <div>
@@ -795,8 +781,8 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   </div>
                   <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>
                     This analysis includes comprehensive comparison against {' '}
-                    {analysis.generation_metadata.analyst_estimates_length ? 
-                      `${Math.round(analysis.generation_metadata.analyst_estimates_length / 100)} analyst metrics` : 
+                    {generationMetadata.analyst_estimates_length ? 
+                      `${Math.round(generationMetadata.analyst_estimates_length / 100)} analyst metrics` : 
                       'current analyst estimates'} for beat/miss analysis and investment implications.
                   </div>
                 </div>
@@ -806,7 +792,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
         )}
 
         {/* Generation Metadata */}
-        {analysis.generation_metadata && (
+        {generationMetadata && (
           <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
               <Typography variant="h6">
@@ -828,38 +814,38 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Model</Typography>
-                <Typography variant="body1">{analysis.generation_metadata.model}</Typography>
+                <Typography variant="body1">{generationMetadata.model}</Typography>
               </Box>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Analysis Type</Typography>
-                <Typography variant="body1">{analysis.generation_metadata.analysis_type}</Typography>
+                <Typography variant="body1">{generationMetadata.analysis_type}</Typography>
               </Box>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Context Documents</Typography>
-                <Typography variant="body1">{analysis.generation_metadata.context_documents_count}</Typography>
+                <Typography variant="body1">{generationMetadata.context_documents_count}</Typography>
               </Box>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Temperature</Typography>
-                <Typography variant="body1">{analysis.generation_metadata.temperature}</Typography>
+                <Typography variant="body1">{generationMetadata.temperature}</Typography>
               </Box>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Max Tokens</Typography>
-                <Typography variant="body1">{analysis.generation_metadata.max_tokens}</Typography>
+                <Typography variant="body1">{generationMetadata.max_tokens}</Typography>
               </Box>
               <Box sx={{ minWidth: 150 }}>
                 <Typography variant="body2" color="textSecondary">Generated</Typography>
                 <Typography variant="body1">
-                  {formatDate(analysis.generation_metadata.generation_timestamp)}
+                  {formatDate(generationMetadata.generation_timestamp)}
                 </Typography>
               </Box>
-              {analysis.generation_metadata.analyst_estimates_included !== undefined && (
+              {generationMetadata.analyst_estimates_included !== undefined && (
                 <Box sx={{ minWidth: 150 }}>
                   <Typography variant="body2" color="textSecondary">Analyst Estimates</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="body1">
-                      {analysis.generation_metadata.analyst_estimates_included ? 'Included' : 'Not Available'}
+                      {generationMetadata.analyst_estimates_included ? 'Included' : 'Not Available'}
                     </Typography>
-                    {analysis.generation_metadata.analyst_estimates_included && (
+                    {generationMetadata.analyst_estimates_included && (
                       <Chip 
                         label="Enhanced" 
                         size="small" 
@@ -870,11 +856,11 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                   </Box>
                 </Box>
               )}
-              {analysis.generation_metadata.analyst_estimates_length && analysis.generation_metadata.analyst_estimates_length > 0 && (
+              {generationMetadata.analyst_estimates_length && generationMetadata.analyst_estimates_length > 0 && (
                 <Box sx={{ minWidth: 150 }}>
                   <Typography variant="body2" color="textSecondary">Estimates Data Size</Typography>
                   <Typography variant="body1">
-                    {analysis.generation_metadata.analyst_estimates_length.toLocaleString()} chars
+                    {generationMetadata.analyst_estimates_length.toLocaleString()} chars
                   </Typography>
                 </Box>
               )}
@@ -919,7 +905,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
                       margin: 0
                     }}
                   >
-                    {analysis.generation_metadata.prompt_used}
+                    {generationMetadata.prompt_used}
                   </Typography>
                 </Paper>
               </Box>
@@ -957,15 +943,7 @@ const DocumentAnalysisDisplay: React.FC<DocumentAnalysisDisplayProps> = ({
             </Typography>
           </Paper>
         )}
-        
-        {analysis.status === 'analysis_approved' && (
-          <Paper sx={{ p: 1, mt: 2, bgcolor: 'success.light', color: 'success.contrastText' }}>
-            <Typography variant="body2">
-              Analysis has been approved and is ready for report generation.
-            </Typography>
-          </Paper>
-        )}
-      </CardContent>
+        </CardContent>
     </Card>
   );
 };

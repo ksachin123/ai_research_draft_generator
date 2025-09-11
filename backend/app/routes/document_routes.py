@@ -101,8 +101,9 @@ class DocumentUpload(Resource):
             # Reset file pointer
             uploaded_file.seek(0)
             
-            # Generate upload ID and save file
-            upload_id = f"upload_{ticker.lower()}_{uuid.uuid4().hex[:8]}"
+            # Generate upload ID with timestamp and save file
+            timestamp_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            upload_id = f"upload_{ticker.lower()}_{timestamp_str}_{uuid.uuid4().hex[:8]}"
             upload_dir = os.path.join(app_config.UPLOAD_FOLDER, ticker.upper())
             
             logger.info(f"Generated upload ID: {upload_id}")
@@ -425,89 +426,6 @@ class DocumentAnalysis(Resource):
                 "error": {
                     "code": "MODIFICATION_ERROR",
                     "message": "Failed to modify analysis",
-                    "details": str(e)
-                },
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }, 500
-
-@document_bp.route('/companies/<string:ticker>/documents/<string:upload_id>/analysis/approve')
-class DocumentAnalysisApproval(Resource):
-    @document_bp.marshal_with(api_response_model)
-    def post(self, ticker, upload_id):
-        """Approve initial analysis and mark ready for report generation"""
-        try:
-            data = request.get_json() or {}
-            user_modifications = data.get('modifications', {})
-            user_notes = data.get('notes', '')
-            
-            upload_dir = os.path.join(app_config.UPLOAD_FOLDER, ticker.upper())
-            content_file_path = os.path.join(upload_dir, f"{upload_id}_content.json")
-            
-            if not os.path.exists(content_file_path):
-                return {
-                    "success": False,
-                    "error": {
-                        "code": "DOCUMENT_NOT_FOUND",
-                        "message": "Document not found",
-                        "details": {}
-                    },
-                    "timestamp": datetime.utcnow().isoformat() + "Z"
-                }, 404
-            
-            # Load document data
-            with open(content_file_path, 'r', encoding='utf-8') as f:
-                document_data = json.load(f)
-            
-            if document_data.get("status") != "analysis_ready":
-                return {
-                    "success": False,
-                    "error": {
-                        "code": "ANALYSIS_NOT_READY",
-                        "message": "Analysis must be in 'analysis_ready' state to approve",
-                        "details": {"current_status": document_data.get("status", "unknown")}
-                    },
-                    "timestamp": datetime.utcnow().isoformat() + "Z"
-                }, 400
-            
-            # Update document data with approval
-            document_data["status"] = "analysis_approved"
-            document_data["approval_date"] = datetime.utcnow().isoformat() + "Z"
-            document_data["user_modifications"] = user_modifications
-            document_data["user_notes"] = user_notes
-            
-            # Apply user modifications to analysis if provided
-            if user_modifications:
-                analysis = document_data.get("analysis", {})
-                for key, value in user_modifications.items():
-                    if key in analysis:
-                        analysis[key] = value
-                document_data["analysis"] = analysis
-            
-            # Save updated document data
-            with open(content_file_path, 'w', encoding='utf-8') as f:
-                json.dump(document_data, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Analysis approved for {upload_id}")
-            
-            return {
-                "success": True,
-                "data": {
-                    "upload_id": upload_id,
-                    "status": "analysis_approved",
-                    "approval_date": document_data["approval_date"],
-                    "ready_for_report": True
-                },
-                "message": "Analysis approved successfully",
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to approve analysis for {upload_id}: {str(e)}")
-            return {
-                "success": False,
-                "error": {
-                    "code": "APPROVAL_ERROR",
-                    "message": "Failed to approve analysis",
                     "details": str(e)
                 },
                 "timestamp": datetime.utcnow().isoformat() + "Z"

@@ -188,19 +188,19 @@ class AIService:
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
     def generate_report_draft(self, new_document: str, context_documents: List[Dict], 
-                            analysis_type: str = "general", approved_analysis: Optional[Dict] = None) -> Dict:
+                            analysis_type: str = "general", analysis: Optional[Dict] = None) -> Dict:
         """Generate detailed research report draft (Stage 2)"""
         
         # Prepare context
         context = self._prepare_context(context_documents)
         
         # Create prompt for detailed report
-        prompt = self._create_report_prompt(new_document, context, analysis_type, approved_analysis)
+        prompt = self._create_report_prompt(new_document, context, analysis_type, analysis)
         
         try:
             self._log_api_call('chat.report_draft', prompt=prompt)
             response = openai.ChatCompletion.create(model=self.model, messages=[
-                {"role": "system", "content": "You are an expert investment research analyst. Generate comprehensive, detailed analysis expanding on approved initial findings."},
+                {"role": "system", "content": "You are an expert investment research analyst. Generate comprehensive, detailed analysis based on the provided analysis findings."},
                 {"role": "user", "content": prompt}
             ], temperature=0.3, max_tokens=2500)
             
@@ -507,34 +507,34 @@ CRITICAL: Always cite specific numbers from financial tables AND compare them to
         
         return sections
 
-    def _create_report_prompt(self, new_document: str, context: str, analysis_type: str, approved_analysis: Optional[Dict] = None) -> str:
+    def _create_report_prompt(self, new_document: str, context: str, analysis_type: str, analysis: Optional[Dict] = None) -> str:
         """Create enhanced prompt for detailed report generation (Stage 2) with comprehensive context explanation"""
         
-        approved_context = ""
-        if approved_analysis:
-            approved_context = f"""
+        analysis_context = ""
+        if analysis:
+            analysis_context = f"""
 
-APPROVED INITIAL ANALYSIS FOR EXPANSION:
-Executive Summary: {approved_analysis.get('executive_summary', '')}
-Key Changes: {', '.join(approved_analysis.get('key_changes', []))}
-New Insights: {', '.join(approved_analysis.get('new_insights', []))}
-Thesis Impact: {approved_analysis.get('potential_thesis_impact', '')}
-Analysis Generation Details: {approved_analysis.get('analysis_generation_details', '')}
+INITIAL ANALYSIS FOR EXPANSION:
+Executive Summary: {analysis.get('executive_summary', '')}
+Key Changes: {', '.join(analysis.get('key_changes', []))}
+New Insights: {', '.join(analysis.get('new_insights', []))}
+Thesis Impact: {analysis.get('potential_thesis_impact', '')}
+Analysis Generation Details: {analysis.get('analysis_generation_details', '')}
 """
         
         base_prompt = f"""
-You are generating a DETAILED RESEARCH REPORT based on approved initial analysis and comprehensive historical context. Expand significantly on the approved findings with detailed context and implications.
+You are generating a DETAILED RESEARCH REPORT based on initial analysis and comprehensive historical context. Expand significantly on the findings with detailed context and implications.
 
 COMPREHENSIVE EXISTING RESEARCH CONTEXT:
 {context}
 
 NEW DOCUMENT TO ANALYZE:
 {new_document}
-{approved_context}
+{analysis_context}
 
 ANALYSIS TYPE: {analysis_type}
 
-Please provide a comprehensive structured analysis expanding on the approved initial findings:
+Please provide a comprehensive structured analysis expanding on the initial findings:
 
 1. EXECUTIVE SUMMARY (4-5 sentences with detailed investment implications)
 
@@ -842,5 +842,157 @@ CRITICAL REQUIREMENTS:
                 matches = re.findall(pattern, variance_text, re.IGNORECASE)
                 for match in matches:
                     sections["variance_highlights"].append(f"Variance: {match}")
+        
+        return sections
+
+    def generate_batch_report(self, batch_analyses: List[Dict], context_documents: List[Dict], 
+                            ticker: str, batch_info: Dict) -> Dict:
+        """Generate a comprehensive report for a batch of analyzed documents"""
+        
+        try:
+            # Prepare combined analysis summary
+            combined_insights = []
+            key_themes = []
+            all_actionable_insights = []
+            
+            for analysis in batch_analyses:
+                if analysis.get('executive_summary'):
+                    combined_insights.append(analysis['executive_summary'])
+                if analysis.get('key_changes'):
+                    key_themes.extend(analysis['key_changes'])
+                if analysis.get('new_insights'):
+                    key_themes.extend(analysis['new_insights'])
+                if analysis.get('actionable_insights'):
+                    all_actionable_insights.extend(analysis['actionable_insights'])
+            
+            # Prepare context
+            context = self._prepare_context(context_documents)
+            
+            # Create comprehensive batch report prompt
+            prompt = f"""
+You are generating a COMPREHENSIVE INVESTMENT RESEARCH REPORT based on analysis of {len(batch_analyses)} documents for {ticker}.
+
+BATCH INFORMATION:
+Batch Name: {batch_info.get('name', 'Unknown')}
+Description: {batch_info.get('description', 'No description')}
+Documents Analyzed: {batch_info.get('document_count', len(batch_analyses))}
+
+HISTORICAL CONTEXT:
+{context}
+
+COMBINED ANALYSIS INSIGHTS:
+{chr(10).join([f"• {insight}" for insight in combined_insights[:10]])}
+
+KEY THEMES IDENTIFIED:
+{chr(10).join([f"• {theme}" for theme in list(set(key_themes))[:15]])}
+
+ACTIONABLE INSIGHTS FROM ALL DOCUMENTS:
+{chr(10).join([f"• {insight}" for insight in list(set(all_actionable_insights))[:10]])}
+
+Please provide a comprehensive, professional investment research report with the following sections:
+
+## EXECUTIVE SUMMARY
+(4-5 sentences summarizing the most critical investment implications across all documents)
+
+## KEY DEVELOPMENTS ANALYSIS
+(Detailed analysis of the most significant changes and developments identified across documents)
+
+## CONSOLIDATED FINANCIAL INSIGHTS
+(Combined financial performance analysis and key metrics from all documents)
+
+## STRATEGIC IMPLICATIONS
+(Investment thesis impact and strategic considerations)
+
+## RISK ASSESSMENT
+(Comprehensive risk analysis based on all analyzed documents)
+
+## INVESTMENT RECOMMENDATION
+(Clear investment recommendation with price target if applicable and supporting rationale)
+
+## NEXT STEPS AND MONITORING POINTS
+(Key items for ongoing monitoring based on the analysis)
+
+Focus on synthesizing insights across multiple documents to provide a holistic view of the company's current situation and prospects.
+"""
+
+            self._log_api_call('chat.batch_report', prompt=prompt)
+            
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert investment research analyst generating comprehensive multi-document research reports."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=3000
+            )
+            
+            report_content = response.choices[0].message.content
+            
+            # Parse the response into structured format
+            structured_report = self._parse_batch_report_response(report_content)
+            
+            # Add metadata
+            structured_report['metadata'] = {
+                'documents_analyzed': len(batch_analyses),
+                'batch_info': batch_info,
+                'ticker': ticker,
+                'generated_at': context_documents[0].get('metadata', {}).get('timestamp') if context_documents else None,
+                'model_used': self.model,
+                'context_documents_count': len(context_documents)
+            }
+            
+            self._log_api_call('chat.batch_report', response_preview=report_content)
+            
+            return structured_report
+            
+        except Exception as e:
+            logger.error(f"Error generating batch report: {str(e)}")
+            self._log_api_call('chat.batch_report', error=e)
+            raise
+    
+    def _parse_batch_report_response(self, content: str) -> Dict:
+        """Parse batch report response into structured format"""
+        
+        sections = {
+            "executive_summary": "",
+            "key_developments": "",
+            "financial_insights": "",
+            "strategic_implications": "",
+            "risk_assessment": "",
+            "investment_recommendation": "",
+            "next_steps": "",
+            "full_content": content
+        }
+        
+        # Simple section parsing based on headers
+        section_markers = {
+            "executive_summary": ["## EXECUTIVE SUMMARY", "EXECUTIVE SUMMARY"],
+            "key_developments": ["## KEY DEVELOPMENTS", "KEY DEVELOPMENTS"],
+            "financial_insights": ["## CONSOLIDATED FINANCIAL", "FINANCIAL INSIGHTS", "FINANCIAL"],
+            "strategic_implications": ["## STRATEGIC IMPLICATIONS", "STRATEGIC"],
+            "risk_assessment": ["## RISK ASSESSMENT", "RISK"],
+            "investment_recommendation": ["## INVESTMENT RECOMMENDATION", "RECOMMENDATION"],
+            "next_steps": ["## NEXT STEPS", "MONITORING POINTS", "NEXT STEPS"]
+        }
+        
+        for section_key, markers in section_markers.items():
+            for marker in markers:
+                if marker in content:
+                    start_idx = content.find(marker)
+                    if start_idx != -1:
+                        # Find the next section or end
+                        next_section_idx = len(content)
+                        for other_key, other_markers in section_markers.items():
+                            if other_key != section_key:
+                                for other_marker in other_markers:
+                                    idx = content.find(other_marker, start_idx + len(marker))
+                                    if idx != -1 and idx < next_section_idx:
+                                        next_section_idx = idx
+                        
+                        section_content = content[start_idx + len(marker):next_section_idx].strip()
+                        if section_content:
+                            sections[section_key] = section_content
+                            break
         
         return sections

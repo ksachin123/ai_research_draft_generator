@@ -31,11 +31,13 @@ import {
   Analytics as AnalyticsIcon
 } from '@mui/icons-material';
 import { documentService, Document, DocumentAnalysis, UploadResponse } from '../../services/documentService';
+import { batchService, Batch } from '../../services/batchService';
 import DocumentAnalysisDisplay from './DocumentAnalysisDisplay';
 
 interface DocumentUploadProps {
   ticker: string;
   onUploadComplete?: (documents: Document[]) => void;
+  onBatchCreated?: (batch: Batch) => void;
 }
 
 interface UploadingFile {
@@ -46,7 +48,7 @@ interface UploadingFile {
   error?: string;
 }
 
-const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplete }) => {
+const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplete, onBatchCreated }) => {
   const [selectedDocumentType, setSelectedDocumentType] = useState<string>('10-Q');
   const [description, setDescription] = useState<string>('');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
@@ -157,9 +159,22 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
       ));
 
       const uploadIds = successfulUploads.map(f => f.document!.upload_id);
-      console.log('Triggering batch analysis for upload IDs:', uploadIds);
+      console.log('Creating batch for upload IDs:', uploadIds);
 
-      const batchResult = await documentService.triggerBatchAnalysis(ticker, uploadIds);
+      // Step 1: Create a batch
+      const batchName = `Analysis Batch - ${new Date().toLocaleDateString()}`;
+      const batchDescription = `Batch analysis of ${uploadIds.length} documents (${successfulUploads.map(f => f.document!.filename).join(', ')})`;
+      
+      const batch = await batchService.createBatch(ticker, {
+        upload_ids: uploadIds,
+        name: batchName,
+        description: batchDescription
+      });
+      
+      console.log('Batch created:', batch);
+
+      // Step 2: Trigger batch analysis
+      const batchResult = await batchService.analyzeBatch(ticker, batch.batch_id);
       
       console.log('Batch analysis completed:', batchResult);
       
@@ -170,6 +185,14 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
         
         // Clear successfully analyzed uploads
         setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
+        
+        // Scroll to top to show analysis results
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Notify parent about batch creation
+        if (onBatchCreated) {
+          onBatchCreated(batch);
+        }
       }
       
       // Show errors for failed analyses
@@ -202,28 +225,6 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
     setUploadingFiles(prev => prev.filter(f => f.status !== 'success'));
   };
 
-  const handleApproveAnalysis = async (uploadId: string) => {
-    try {
-      const approvalData = {
-        modifications: {},
-        notes: 'Analysis approved via UI'
-      };
-
-      await documentService.approveAnalysis(ticker, uploadId, approvalData);
-      
-      // Refresh the analysis to show updated status
-      const updatedAnalysis = await documentService.getAnalysis(ticker, uploadId);
-      setAnalysisResults(prev => 
-        prev.map(analysis => 
-          analysis.upload_id === uploadId ? updatedAnalysis : analysis
-        )
-      );
-    } catch (error: any) {
-      console.error('Failed to approve analysis:', error);
-      setGlobalError(`Failed to approve analysis: ${error.message}`);
-    }
-  };
-
   const removeUploadingFile = (index: number) => {
     setUploadingFiles(prev => prev.filter((_, idx) => idx !== index));
   };
@@ -238,7 +239,38 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
   };
 
   return (
-    <>
+    <Box>
+      {/* Analysis Results - displayed prominently at the top when available */}
+      {showAnalysis && analysisResults.length > 0 && (
+        <Card sx={{ mb: 3, border: '2px solid', borderColor: 'primary.main' }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h5" sx={{ color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+                <AnalyticsIcon sx={{ mr: 1 }} />
+                Analysis Results ({analysisResults.length} document{analysisResults.length > 1 ? 's' : ''})
+              </Typography>
+              <Button 
+                onClick={handleCloseAnalysis} 
+                variant="outlined"
+                size="small"
+                startIcon={<RefreshIcon />}
+              >
+                Continue Uploading
+              </Button>
+            </Box>
+            {analysisResults.map((analysis) => (
+              <DocumentAnalysisDisplay
+                key={analysis.upload_id}
+                analysis={analysis}
+                ticker={ticker}
+                onClose={analysisResults.length === 1 ? handleCloseAnalysis : undefined}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upload Section */}
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
@@ -434,29 +466,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ ticker, onUploadComplet
         )}
       </CardContent>
     </Card>
-    
-    {/* Analysis Results Display */}
-    {showAnalysis && analysisResults.length > 0 && (
-      <Box sx={{ mt: 3 }}>
-        {analysisResults.map((analysis, index) => (
-          <DocumentAnalysisDisplay
-            key={analysis.upload_id}
-            analysis={analysis}
-            ticker={ticker}
-            onClose={analysisResults.length === 1 ? handleCloseAnalysis : undefined}
-            onApprove={handleApproveAnalysis}
-          />
-        ))}
-        {analysisResults.length > 1 && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <Button onClick={handleCloseAnalysis} variant="outlined">
-              Close All Analysis Results
-            </Button>
-          </Box>
-        )}
-      </Box>
-    )}
-    </>
+    </Box>
   );
 };
 

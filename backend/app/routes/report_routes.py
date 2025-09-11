@@ -87,20 +87,20 @@ class ReportGenerate(Resource):
                 original_filename = document_data.get('original_filename', 'unknown')
                 document_status = document_data.get('status', 'unknown')
                 
-                # Check if analysis has been approved for report generation
-                if document_status != "analysis_approved":
+                # Check if analysis has been completed
+                if document_status not in ["analysis_ready", "analysis_approved"]:
                     return {
                         "success": False,
                         "error": {
-                            "code": "ANALYSIS_NOT_APPROVED",
-                            "message": "Document analysis must be reviewed and approved before report generation",
+                            "code": "ANALYSIS_NOT_READY",
+                            "message": "Document analysis must be completed before report generation",
                             "details": {"current_status": document_status}
                         },
                         "timestamp": datetime.utcnow().isoformat() + "Z"
                     }, 400
                 
-                # Get approved analysis for expansion
-                approved_analysis = document_data.get('analysis', {})
+                # Get analysis for expansion
+                analysis = document_data.get('analysis', {})
                 context_sources = document_data.get('context_sources', [])
                 
                 if not document_text:
@@ -114,7 +114,7 @@ class ReportGenerate(Resource):
                         "timestamp": datetime.utcnow().isoformat() + "Z"
                     }, 400
                     
-                logger.info(f"Loaded approved analysis for detailed report generation: {upload_id}")
+                logger.info(f"Loaded analysis for detailed report generation: {upload_id}")
                 
             except Exception as e:
                 logger.error(f"Failed to load document content {upload_id}: {str(e)}")
@@ -160,12 +160,12 @@ class ReportGenerate(Resource):
                             "distance": results["distances"][0][i]
                         })
             
-            # Generate detailed report draft using approved analysis
+            # Generate detailed report draft using analysis
             draft = ai_service.generate_report_draft(
                 document_text, 
                 context_documents, 
                 analysis_type,
-                approved_analysis
+                analysis
             )
             
             # Generate report ID

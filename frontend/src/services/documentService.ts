@@ -30,6 +30,18 @@ export interface DocumentAnalysis {
     analyst_estimates_comparison?: string[];
     estimate_accuracy_assessment?: string[];
     analysis_generation_details?: string;
+    // Generation metadata (can be nested here too)
+    generation_metadata?: {
+      prompt_used: string;
+      model: string;
+      temperature: number;
+      max_tokens: number;
+      analysis_type: string;
+      context_documents_count: number;
+      generation_timestamp: string;
+      analyst_estimates_included?: boolean;
+      analyst_estimates_length?: number;
+    };
     // Enhanced analysis fields for estimates comparison
     comparative_analysis?: {
       executive_summary?: string;
@@ -49,7 +61,7 @@ export interface DocumentAnalysis {
   };
   has_estimates_comparison?: boolean;
   analysis_date: string;
-  status: 'analysis_ready' | 'analysis_approved' | 'analysis_error';
+  status: 'analysis_ready' | 'analysis_error';
   context_sources: ContextSource[];
   generation_metadata?: {
     prompt_used: string;
@@ -81,13 +93,11 @@ export interface Document {
   filename: string;
   upload_date: string;
   document_type: string;
-  status: 'uploaded' | 'processing' | 'analysis_ready' | 'analysis_approved' | 'report_generated' | 'error';
+  status: 'uploaded' | 'processing' | 'analysis_ready' | 'report_generated' | 'error';
   analysis_ready: boolean;
-  analysis_approved: boolean;
   report_generated: boolean;
   content_length: number;
   analysis_date?: string;
-  approval_date?: string;
   metadata: Record<string, any>;
 }
 
@@ -115,11 +125,6 @@ export interface GeneratedReport {
     investment_thesis_impact: string;
   };
   sources: ContextSource[];
-}
-
-export interface AnalysisApprovalRequest {
-  modifications?: Record<string, any>;
-  notes?: string;
 }
 
 export interface AnalysisModificationRequest {
@@ -254,19 +259,6 @@ class DocumentService {
     return response.data.data;
   }
 
-  // Approve analysis for report generation
-  async approveAnalysis(
-    ticker: string,
-    uploadId: string,
-    approvalData: AnalysisApprovalRequest
-  ): Promise<{ status: string; approval_date: string }> {
-    const response: AxiosResponse = await api.post(
-      `/companies/${ticker}/documents/${uploadId}/analysis/approve`,
-      approvalData
-    );
-    return response.data.data;
-  }
-
   // Modify analysis parameters and optionally regenerate
   async modifyAnalysis(
     ticker: string,
@@ -308,7 +300,7 @@ class DocumentService {
 
   // Helper method to check if analysis is approved and ready for report generation
   isReadyForReport(document: Document): boolean {
-    return document.status === 'analysis_approved';
+    return document.status === 'analysis_ready';
   }
 
   // Helper method to get status display text
@@ -316,8 +308,7 @@ class DocumentService {
     const statusMap: Record<string, string> = {
       'uploaded': 'Processing...',
       'processing': 'Processing...',
-      'analysis_ready': 'Analysis Ready for Review',
-      'analysis_approved': 'Ready for Report Generation',
+      'analysis_ready': 'Ready for Report Generation',
       'report_generated': 'Report Generated',
       'analysis_error': 'Analysis Error',
       'error': 'Processing Error'
@@ -330,8 +321,7 @@ class DocumentService {
     const colorMap: Record<string, 'primary' | 'secondary' | 'success' | 'warning' | 'error'> = {
       'uploaded': 'primary',
       'processing': 'primary', 
-      'analysis_ready': 'warning',
-      'analysis_approved': 'success',
+      'analysis_ready': 'success',
       'report_generated': 'success',
       'analysis_error': 'error',
       'error': 'error'

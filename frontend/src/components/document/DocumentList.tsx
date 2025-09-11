@@ -24,7 +24,6 @@ import {
   Description as DescriptionIcon,
   Visibility as VisibilityIcon,
   CheckCircle as CheckCircleIcon,
-  Schedule as ScheduleIcon,
   Assessment as AssessmentIcon,
   Error as ErrorIcon,
   Refresh as RefreshIcon
@@ -67,18 +66,9 @@ const DocumentList: React.FC<DocumentListProps> = ({ ticker, onRefresh }) => {
     setShowAnalysisReview(true);
   };
 
-  const handleAnalysisApproved = () => {
-    setShowAnalysisReview(false);
-    setSelectedDocument(null);
-    loadDocuments(); // Refresh the list
-    if (onRefresh) onRefresh();
-  };
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'analysis_ready':
-        return <ScheduleIcon color="warning" />;
-      case 'analysis_approved':
         return <CheckCircleIcon color="success" />;
       case 'report_generated':
         return <AssessmentIcon color="success" />;
@@ -101,20 +91,6 @@ const DocumentList: React.FC<DocumentListProps> = ({ ticker, onRefresh }) => {
           onClick={() => handleViewAnalysis(document.upload_id)}
         >
           Review Analysis
-        </Button>
-      );
-    }
-
-    if (document.status === 'analysis_approved') {
-      return (
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<AssessmentIcon />}
-          onClick={() => {/* Navigate to report generation */}}
-        >
-          Generate Report
         </Button>
       );
     }
@@ -219,11 +195,6 @@ const DocumentList: React.FC<DocumentListProps> = ({ ticker, onRefresh }) => {
                             Analysis: {new Date(document.analysis_date).toLocaleDateString()}
                           </Typography>
                         )}
-                        {document.approval_date && (
-                          <Typography variant="body2" color="textSecondary">
-                            Approved: {new Date(document.approval_date).toLocaleDateString()}
-                          </Typography>
-                        )}
                         <Box sx={{ mt: 1 }}>
                           <Chip
                             label={documentService.getStatusDisplay(document.status)}
@@ -260,7 +231,6 @@ const DocumentList: React.FC<DocumentListProps> = ({ ticker, onRefresh }) => {
             <AnalysisReview
               ticker={ticker}
               uploadId={selectedDocument}
-              onAnalysisApproved={handleAnalysisApproved}
               onClose={() => setShowAnalysisReview(false)}
             />
           )}
