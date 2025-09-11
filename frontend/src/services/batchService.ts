@@ -68,13 +68,11 @@ export interface Batch {
 }
 
 export interface BatchReport {
-  executive_summary: string;
-  key_developments: string;
-  financial_insights: string;
-  strategic_implications: string;
-  risk_assessment: string;
-  investment_recommendation: string;
-  next_steps: string;
+  title: string;
+  key_takeaways: string;
+  bottomline: string;
+  synopsis: string;
+  narrative: string;
   full_content: string;
   metadata?: {
     documents_analyzed: number;
@@ -82,8 +80,16 @@ export interface BatchReport {
     ticker: string;
     generated_at: string;
     model_used: string;
-    context_documents_count: number;
+    report_type: string;
   };
+  // Legacy fields for backward compatibility
+  executive_summary?: string;
+  key_developments?: string;
+  financial_insights?: string;
+  strategic_implications?: string;
+  risk_assessment?: string;
+  investment_recommendation?: string;
+  next_steps?: string;
 }
 
 export interface BatchAnalysisResult {

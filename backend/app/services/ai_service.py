@@ -1,6 +1,7 @@
 import openai
 from typing import List, Dict, Optional
 import logging
+from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 logger = logging.getLogger(__name__)
@@ -845,6 +846,229 @@ CRITICAL REQUIREMENTS:
         
         return sections
 
+    def generate_enhanced_batch_report(self, raw_ai_responses: List[str], analyst_estimates: str, 
+                                     ticker: str, batch_info: Dict) -> Dict:
+        """Generate an enhanced investment research report using raw AI responses as context"""
+        
+        try:
+            # Combine all raw AI responses as context
+            context = "\n\n".join([f"--- Document Analysis {i+1} ---\n{response}" 
+                                 for i, response in enumerate(raw_ai_responses)])
+            
+            # System message for professional equity research
+            system_message = """You are a professional equity research assistant trained to generate concise, factual, and investor-grade research updates.
+
+Rules:
+- Output must be in MARKDOWN format, not JSON.
+- Each section must use Markdown headings (#, ##, ###).
+- Every numeric claim must cite its source using [src:<id>] inline.
+- When comparing vs analyst estimates, show both absolute ($) and % variances.
+- Keep tone professional, precise, and suitable for institutional investors.
+- Keep Bottomline ≤ 200 words."""
+
+            # Create the main user prompt
+            user_prompt = f"""CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+NEW DOCUMENT (with extracted financial tables and transcript chunks):
+Based on the context and analysis provided above.
+
+TASK:
+Write a Markdown-formatted research update with the following sections:
+
+# Title
+Concise, client-facing title (6–12 words).
+
+## Key Takeaways
+- 3–6 bullets, each including a number and variance vs estimate.
+- End each bullet with a source tag like [src:10Q:stmt_rev].
+
+## Bottomline
+A short summary paragraph (≤ 200 words) describing the main investment implication.
+
+## Synopsis
+1–2 short paragraphs describing the key message for clients.
+
+## Narrative
+Detailed analysis with the following sub-sections:
+- ### Financial Summary
+- ### Business Segments
+- ### Guidance & Management Commentary
+- ### Margins & Costs
+- ### Cash Flow & Capital Allocation
+- ### Risks & Sensitivities
+- ### Investment Thesis Impact
+
+At the end of Narrative, include a short **Action Items** section with 3 bullets for analyst next steps."""
+
+            self._log_api_call('chat.enhanced_batch_report', prompt=user_prompt)
+            
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=4000
+            )
+            
+            report_content = response.choices[0].message.content
+            
+            # Parse the response into structured format
+            structured_report = self._parse_enhanced_report_response(report_content)
+            
+            # Add metadata
+            structured_report['metadata'] = {
+                'documents_analyzed': len(raw_ai_responses),
+                'batch_info': batch_info,
+                'ticker': ticker,
+                'generated_at': datetime.utcnow().isoformat() + "Z",
+                'model_used': self.model,
+                'report_type': 'enhanced_markdown'
+            }
+            
+            self._log_api_call('chat.enhanced_batch_report', response_preview=report_content[:500])
+            
+            return structured_report
+            
+        except Exception as e:
+            logger.error(f"Error generating enhanced batch report: {str(e)}")
+            self._log_api_call('chat.enhanced_batch_report', error=e)
+            raise
+
+    def generate_section_specific_content(self, section_type: str, context: str, 
+                                        analyst_estimates: str, ticker: str) -> str:
+        """Generate content for specific sections using section-specific prompts"""
+        
+        section_prompts = {
+            "title": f"""Task: Write a concise Markdown H1 title for the report (6–12 words) that highlights the quarter's key angle.
+
+CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+Write ONLY the title with # prefix.""",
+            
+            "key_takeaways": f"""Inputs: Based on the provided context and analyst estimates
+Task: Write 3–6 Markdown list items under "## Key Takeaways".
+Each must: 
+- include metric + variance vs estimate ($ and %),
+- end with source [src:<id>].
+
+CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+Write the complete Key Takeaways section with heading.""",
+            
+            "bottomline": f"""Task: Under "## Bottomline", write ≤200 words in one Markdown paragraph.
+Summarize the most material beats/misses and thesis impact.
+
+CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+Write the complete Bottomline section with heading.""",
+            
+            "synopsis": f"""Task: Under "## Synopsis", write 1–2 short paragraphs (3–6 sentences total).
+Explain what changed and why it matters, in analyst voice.
+
+CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+Write the complete Synopsis section with heading.""",
+            
+            "narrative": f"""You are a senior equity research analyst at a top investment bank. 
+Your task is to write the NARRATIVE SECTION of a professional research report for institutional investors. 
+The audience is portfolio managers and buy-side analysts. 
+
+TONE & STYLE:
+- Write in professional sell-side analyst voice: authoritative, confident, concise but narrative-driven. 
+- Incorporate some natural analyst phrasing: e.g., "sigh of relief," "tough to nitpick," "range-bound in the near term."
+- Balance praise with caution: highlight strengths AND risks.
+- Use strong transitions to keep the narrative flowing.
+- Write in Markdown with sub-headings and bullet points where appropriate.
+
+CONTENT REQUIREMENTS:
+1. **Opening framing paragraph**: Start with a bold thematic assessment (e.g., "Broad-based outperformance, though near-term risk events linger").  
+2. **Variance analysis**: For revenue, EPS, margins, and segments, compare actuals vs analyst estimates and consensus. Quantify beats/misses in $ and %. Example: "EPS of $1.57, 8% above MSe and 10% ahead of Consensus."  
+3. **Segment detail**: Discuss each major segment (iPhone, Mac, iPad, Services, Wearables) with multiple drivers (demand, product launches, regional subsidies, upgrade cycles).  
+4. **Guidance analysis**: Interpret management's forward guidance; highlight what it implies vs expectations.  
+5. **Strategic themes**: Weave in management commentary on AI, capex, and regulatory issues. Quote or paraphrase CEO/management where impactful.  
+6. **Risk events**: Identify key risks (tariffs, litigation, regulatory rulings) and explain their potential impact on performance and valuation.  
+7. **Forward view**: Discuss how results and guidance affect forward years (FY25/26/27). Highlight catalysts (new iPhone cycle, AI upgrades).  
+8. **Thesis impact**: Link back to the analyst's investment thesis, rating, and price target. Show adjustments to revenue/EPS/PT with clear rationale.  
+9. **Structure**: Use subsections such as:  
+   - ### Financial Summary
+   - ### Business Segments
+   - ### Guidance & Management Commentary
+   - ### Margins & Costs
+   - ### Cash Flow & Capital Allocation
+   - ### Risks & Sensitivities
+   - ### Investment Thesis Impact
+
+FORMATTING:
+- Use Markdown headings and subheadings.  
+- Use inline numbers with sources in brackets [src:10Q:stmt_rev] where available.  
+- Include short bullet lists for clarity when discussing drivers.  
+- Write 600–900 words, structured, and easy to read.  
+
+CRITICAL:
+- Every major point must tie back to actual numbers or management commentary.  
+- Explicitly compare actuals vs estimates (both in $ and %).  
+- Always conclude with a perspective on near-term stock implications (e.g., "range-bound near term due to risks, but upside as catalysts resolve").  
+
+CONTEXT:
+{context}
+
+ANALYST ESTIMATES:
+{analyst_estimates}
+
+Write the complete Narrative section with heading and all subsections."""
+        }
+        
+        if section_type not in section_prompts:
+            raise ValueError(f"Unknown section type: {section_type}")
+        
+        try:
+            system_message = """You are a professional equity research assistant trained to generate concise, factual, and investor-grade research updates.
+
+Rules:
+- Output must be in MARKDOWN format, not JSON.
+- Each section must use Markdown headings (#, ##, ###).
+- Every numeric claim must cite its source using [src:<id>] inline.
+- When comparing vs analyst estimates, show both absolute ($) and % variances.
+- Keep tone professional, precise, and suitable for institutional investors."""
+
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": section_prompts[section_type]}
+                ],
+                temperature=0.2,
+                max_tokens=2000
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"Error generating {section_type} section: {str(e)}")
+            raise
+
     def generate_batch_report(self, batch_analyses: List[Dict], context_documents: List[Dict], 
                             ticker: str, batch_info: Dict) -> Dict:
         """Generate a comprehensive report for a batch of analyzed documents"""
@@ -994,5 +1218,72 @@ Focus on synthesizing insights across multiple documents to provide a holistic v
                         if section_content:
                             sections[section_key] = section_content
                             break
+        
+        return sections
+
+    def _parse_enhanced_report_response(self, content: str) -> Dict:
+        """Parse enhanced report response into structured format with new sections"""
+        
+        sections = {
+            "title": "",
+            "key_takeaways": "",
+            "bottomline": "",
+            "synopsis": "",
+            "narrative": "",
+            "full_content": content
+        }
+        
+        # Parse Title (H1)
+        title_match = content.find("# ")
+        if title_match != -1:
+            title_end = content.find("\n", title_match)
+            if title_end != -1:
+                sections["title"] = content[title_match + 2:title_end].strip()
+        
+        # Parse Key Takeaways (H2)
+        takeaways_start = content.find("## Key Takeaways")
+        if takeaways_start != -1:
+            takeaways_end = content.find("## ", takeaways_start + 1)
+            if takeaways_end == -1:
+                takeaways_end = len(content)
+            sections["key_takeaways"] = content[takeaways_start:takeaways_end].strip()
+        
+        # Parse Bottomline (H2)
+        bottomline_start = content.find("## Bottomline")
+        if bottomline_start != -1:
+            bottomline_end = content.find("## ", bottomline_start + 1)
+            if bottomline_end == -1:
+                bottomline_end = len(content)
+            sections["bottomline"] = content[bottomline_start:bottomline_end].strip()
+        
+        # Parse Synopsis (H2)
+        synopsis_start = content.find("## Synopsis")
+        if synopsis_start != -1:
+            synopsis_end = content.find("## ", synopsis_start + 1)
+            if synopsis_end == -1:
+                synopsis_end = len(content)
+            sections["synopsis"] = content[synopsis_start:synopsis_end].strip()
+        
+        # Parse Narrative (H2)
+        narrative_start = content.find("## Narrative")
+        if narrative_start != -1:
+            # Narrative goes to the end of the document or next H1/H2
+            narrative_end = len(content)
+            # Look for next H1 or H2 that's not a subsection (###)
+            search_pos = narrative_start + 1
+            while search_pos < len(content):
+                next_h = content.find("\n#", search_pos)
+                if next_h == -1:
+                    break
+                # Check if it's H1 or H2 (not H3+)
+                header_line_end = content.find("\n", next_h + 1)
+                if header_line_end != -1:
+                    header_line = content[next_h:header_line_end]
+                    if header_line.startswith("\n# ") or (header_line.startswith("\n## ") and not header_line.startswith("\n### ")):
+                        narrative_end = next_h
+                        break
+                search_pos = next_h + 1
+            
+            sections["narrative"] = content[narrative_start:narrative_end].strip()
         
         return sections

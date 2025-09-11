@@ -568,9 +568,9 @@ class BatchReportGeneration(Resource):
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }, 400
             
-            # Collect all analyses from the batch
-            batch_analyses = []
-            combined_content = ""
+            # Collect raw AI responses and analyst estimates from the batch
+            raw_ai_responses = []
+            analyst_estimates = None
             
             for upload_id in batch_data.get('upload_ids', []):
                 content_file_path = os.path.join(upload_dir, f"{upload_id}_content.json")
@@ -579,52 +579,41 @@ class BatchReportGeneration(Resource):
                         with open(content_file_path, 'r', encoding='utf-8') as f:
                             document_data = json.load(f)
                         
-                        if document_data.get('analysis'):
-                            batch_analyses.append(document_data['analysis'])
-                            combined_content += f"\n\n--- Document: {document_data.get('original_filename', upload_id)} ---\n"
-                            combined_content += document_data.get('document_content', '')[:2000] + "..."
+                        # Get the raw AI response
+                        analysis = document_data.get('analysis', {})
+                        if analysis.get('_raw_ai_response'):
+                            raw_ai_responses.append(analysis['_raw_ai_response'])
+                        
+                        # Get analyst estimates from the first document that has them
+                        if analyst_estimates is None and analysis.get('analyst_estimates_preview'):
+                            analyst_estimates = analysis['analyst_estimates_preview']
+                            
                     except Exception as e:
                         logger.warning(f"Failed to load analysis for {upload_id}: {str(e)}")
                         continue
             
-            if not batch_analyses:
+            if not raw_ai_responses:
                 return {
                     "success": False,
                     "error": {
-                        "code": "NO_ANALYSIS_DATA",
-                        "message": "No analysis data found for batch report generation",
+                        "code": "NO_RAW_AI_RESPONSE_DATA",
+                        "message": "No raw AI response data found for enhanced batch report generation",
                         "details": {}
                     },
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }, 400
             
-            # Generate comprehensive batch report
-            logger.info(f"Generating batch report for {batch_id} with {len(batch_analyses)} analyses")
+            # Generate enhanced batch report using raw AI responses
+            logger.info(f"Generating enhanced batch report for {batch_id} with {len(raw_ai_responses)} raw AI responses")
             
-            # Get additional context for report generation by generating embedding
-            combined_embedding = ai_service.generate_embedding(combined_content[:2000])
+            # Use analyst estimates or empty string if not available
+            if analyst_estimates is None:
+                analyst_estimates = ""
             
-            # Query historical financial data for context
-            context_results = db_service.query_historical_financial_data(
-                ticker.upper(),
-                combined_embedding,
-                n_results=15,
-                prefer_recent=True
-            )
-            
-            context_documents = []
-            if context_results and context_results.get("documents"):
-                for i in range(len(context_results["documents"][0])):
-                    context_documents.append({
-                        "content": context_results["documents"][0][i],
-                        "metadata": context_results["metadatas"][0][i] if context_results.get("metadatas") else {},
-                        "distance": context_results["distances"][0][i] if context_results.get("distances") else 0
-                    })
-            
-            # Generate the batch report using combined analyses
-            report_content = ai_service.generate_batch_report(
-                batch_analyses=batch_analyses,
-                context_documents=context_documents,
+            # Generate the enhanced batch report using raw AI responses as context
+            report_content = ai_service.generate_enhanced_batch_report(
+                raw_ai_responses=raw_ai_responses,
+                analyst_estimates=analyst_estimates,
                 ticker=ticker,
                 batch_info={
                     "name": batch_data.get("name", ""),
@@ -650,7 +639,7 @@ class BatchReportGeneration(Resource):
                     "batch_id": batch_id,
                     "report": report_content,
                     "generated_at": batch_data["report_generated_at"],
-                    "documents_analyzed": len(batch_analyses)
+                    "documents_analyzed": len(raw_ai_responses)
                 },
                 "message": "Batch report generated successfully",
                 "timestamp": datetime.utcnow().isoformat() + "Z"

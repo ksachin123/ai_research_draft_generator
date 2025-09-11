@@ -116,12 +116,12 @@ const BatchReportDisplay: React.FC<BatchReportDisplayProps> = ({
               variant="outlined" 
             />
             <Chip 
-              label={`Context Sources: ${report.metadata.context_documents_count}`} 
+              label={`Documents: ${report.metadata.documents_analyzed}`} 
               size="small" 
               variant="outlined" 
             />
             <Chip 
-              label={`Documents: ${report.metadata.documents_analyzed}`} 
+              label={`Report Type: ${report.metadata.report_type || 'Standard'}`} 
               size="small" 
               variant="outlined" 
             />
