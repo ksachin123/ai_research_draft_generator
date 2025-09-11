@@ -8,7 +8,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || (
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 120000, // Increased to 2 minutes default timeout
   headers: {
     'Content-Type': 'application/json',
   },

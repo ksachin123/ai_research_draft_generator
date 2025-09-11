@@ -281,7 +281,7 @@ class DocumentService {
       `/companies/${ticker}/reports/generate`,
       reportData,
       {
-        timeout: 180000, // 3 minutes for detailed report generation
+        timeout: 600000, // Increased to 10 minutes for enhanced report generation
       }
     );
     return response.data.data;

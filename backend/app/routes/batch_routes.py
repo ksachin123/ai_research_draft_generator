@@ -404,7 +404,7 @@ class BatchAnalysis(Resource):
                     # Get analyst estimates for this ticker
                     analyst_estimates = None
                     try:
-                        targetDate = datetime(2025, 7, 30)
+                        targetDate = datetime(2025, 5, 30)
                         analyst_estimates = enhanced_parser.get_current_quarter_estimates_for_ai(ticker.upper(), targetDate)
                         logger.info(f"Successfully retrieved analyst estimates for batch analysis of {ticker} ({len(analyst_estimates) if analyst_estimates else 0} characters)")
                     except Exception as e:

@@ -508,76 +508,6 @@ CRITICAL: Always cite specific numbers from financial tables AND compare them to
         
         return sections
 
-    def _create_report_prompt(self, new_document: str, context: str, analysis_type: str, analysis: Optional[Dict] = None) -> str:
-        """Create enhanced prompt for detailed report generation (Stage 2) with comprehensive context explanation"""
-        
-        analysis_context = ""
-        if analysis:
-            analysis_context = f"""
-
-INITIAL ANALYSIS FOR EXPANSION:
-Executive Summary: {analysis.get('executive_summary', '')}
-Key Changes: {', '.join(analysis.get('key_changes', []))}
-New Insights: {', '.join(analysis.get('new_insights', []))}
-Thesis Impact: {analysis.get('potential_thesis_impact', '')}
-Analysis Generation Details: {analysis.get('analysis_generation_details', '')}
-"""
-        
-        base_prompt = f"""
-You are generating a DETAILED RESEARCH REPORT based on initial analysis and comprehensive historical context. Expand significantly on the findings with detailed context and implications.
-
-COMPREHENSIVE EXISTING RESEARCH CONTEXT:
-{context}
-
-NEW DOCUMENT TO ANALYZE:
-{new_document}
-{analysis_context}
-
-ANALYSIS TYPE: {analysis_type}
-
-Please provide a comprehensive structured analysis expanding on the initial findings:
-
-1. EXECUTIVE SUMMARY (4-5 sentences with detailed investment implications)
-
-2. DETAILED ANALYSIS OF CHANGES:
-- Expand significantly on identified changes with comprehensive supporting evidence from historical context
-- Quantify impact using specific metrics and historical benchmarks
-- Provide detailed historical context and trend comparisons
-- Reference specific historical reports and analyst estimates where relevant
-
-3. COMPREHENSIVE NEW INSIGHTS:
-- Deep dive into new information with extensive historical comparison
-- Market impact assessment based on historical patterns
-- Competitive implications using historical competitive data
-- Long-term trend analysis and implications
-
-4. INVESTMENT THESIS UPDATE:
-- Detailed assessment of thesis impact with historical perspective
-- Updated investment drivers analysis with supporting historical data
-- Comprehensive risk assessment updates (upside/downside scenarios)
-- Specific actionable recommendations for investors
-
-5. ANALYSIS GENERATION DETAILS:
-- Provide detailed explanation of HOW the comprehensive historical context informed this analysis
-- Identify specific historical reports, estimates, and data points that were crucial for the conclusions
-- Explain which financial metrics and trends were benchmarked against historical performance
-- Detail confidence levels based on depth and quality of available historical context
-- Note any limitations in historical data that affected the analysis quality
-
-6. SOURCE CITATIONS AND CONFIDENCE:
-- Reference specific data points, sources, and historical benchmarks
-- Indicate confidence levels for each major finding based on historical support
-- Highlight areas requiring further monitoring with historical context
-- Provide historical precedents where applicable
-
-CRITICAL REQUIREMENTS:
-- Expand significantly on the approved initial analysis with much greater detail and historical context
-- Provide comprehensive actionable investment insights with detailed supporting evidence
-- Use the extensive historical context to provide deeper perspective and validation
-- In "Analysis Generation Details", explicitly explain how you leveraged the historical research to enhance the analysis quality and confidence
-"""
-        
-        return base_prompt
     
     def _parse_draft_response(self, draft_content: str) -> Dict:
         """Parse the AI response into structured format with enhanced sections"""
@@ -848,90 +778,85 @@ CRITICAL REQUIREMENTS:
 
     def generate_enhanced_batch_report(self, raw_ai_responses: List[str], analyst_estimates: str, 
                                      ticker: str, batch_info: Dict) -> Dict:
-        """Generate an enhanced investment research report using raw AI responses as context"""
+        """Generate an enhanced investment research report using section-specific prompts for better quality"""
         
         try:
             # Combine all raw AI responses as context
             context = "\n\n".join([f"--- Document Analysis {i+1} ---\n{response}" 
                                  for i, response in enumerate(raw_ai_responses)])
             
-            # System message for professional equity research
-            system_message = """You are a professional equity research assistant trained to generate concise, factual, and investor-grade research updates.
-
-Rules:
-- Output must be in MARKDOWN format, not JSON.
-- Each section must use Markdown headings (#, ##, ###).
-- Every numeric claim must cite its source using [src:<id>] inline.
-- When comparing vs analyst estimates, show both absolute ($) and % variances.
-- Keep tone professional, precise, and suitable for institutional investors.
-- Keep Bottomline ≤ 200 words."""
-
-            # Create the main user prompt
-            user_prompt = f"""CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
-
-NEW DOCUMENT (with extracted financial tables and transcript chunks):
-Based on the context and analysis provided above.
-
-TASK:
-Write a Markdown-formatted research update with the following sections:
-
-# Title
-Concise, client-facing title (6–12 words).
-
-## Key Takeaways
-- 3–6 bullets, each including a number and variance vs estimate.
-- End each bullet with a source tag like [src:10Q:stmt_rev].
-
-## Bottomline
-A short summary paragraph (≤ 200 words) describing the main investment implication.
-
-## Synopsis
-1–2 short paragraphs describing the key message for clients.
-
-## Narrative
-Detailed analysis with the following sub-sections:
-- ### Financial Summary
-- ### Business Segments
-- ### Guidance & Management Commentary
-- ### Margins & Costs
-- ### Cash Flow & Capital Allocation
-- ### Risks & Sensitivities
-- ### Investment Thesis Impact
-
-At the end of Narrative, include a short **Action Items** section with 3 bullets for analyst next steps."""
-
-            self._log_api_call('chat.enhanced_batch_report', prompt=user_prompt)
+            logger.info(f"Generating enhanced batch report using section-specific prompts for {ticker}")
             
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2,
-                max_tokens=4000
-            )
+            # Generate each section using specialized prompts
+            sections = {}
+            prompts_used = {}
             
-            report_content = response.choices[0].message.content
+            section_types = ["title", "key_takeaways", "bottomline", "synopsis", "narrative"]
             
-            # Parse the response into structured format
-            structured_report = self._parse_enhanced_report_response(report_content)
+            for section_type in section_types:
+                try:
+                    logger.info(f"Generating {section_type} section for {ticker}")
+                    section_content, section_prompt = self.generate_section_specific_content(
+                        section_type, context, analyst_estimates, ticker
+                    )
+                    
+                    # Store the content
+                    if section_type == "title":
+                        # Extract title without the # prefix for storage
+                        title_line = section_content.strip().split('\n')[0]
+                        sections[section_type] = title_line.replace('# ', '').strip()
+                    else:
+                        sections[section_type] = section_content
+                    
+                    # Store the actual prompt used for this section for debugging/transparency
+                    prompts_used[section_type] = section_prompt
+                    
+                    logger.info(f"Successfully generated {section_type} section ({len(section_content)} chars)")
+                    
+                except Exception as section_error:
+                    logger.error(f"Error generating {section_type} section: {str(section_error)}")
+                    sections[section_type] = f"Error generating {section_type}: {str(section_error)}"
+                    prompts_used[section_type] = f"Error in {section_type} generation"
             
-            # Add metadata
+            # Combine all sections into full content for backward compatibility
+            full_content_parts = []
+            
+            if sections.get("title"):
+                full_content_parts.append(f"# {sections['title']}")
+            
+            for section_type in ["key_takeaways", "bottomline", "synopsis", "narrative"]:
+                if sections.get(section_type):
+                    full_content_parts.append(sections[section_type])
+            
+            full_content = "\n\n".join(full_content_parts)
+            
+            # Create structured report with individual sections and full content
+            structured_report = {
+                "title": sections.get("title", ""),
+                "key_takeaways": sections.get("key_takeaways", ""),
+                "bottomline": sections.get("bottomline", ""),
+                "synopsis": sections.get("synopsis", ""),
+                "narrative": sections.get("narrative", ""),
+                "full_content": full_content
+            }
+            
+            # Add comprehensive metadata including prompts used
             structured_report['metadata'] = {
                 'documents_analyzed': len(raw_ai_responses),
                 'batch_info': batch_info,
                 'ticker': ticker,
                 'generated_at': datetime.utcnow().isoformat() + "Z",
                 'model_used': self.model,
-                'report_type': 'enhanced_markdown'
+                'report_type': 'enhanced_section_specific',
+                'generation_method': 'section_specific_prompts',
+                'sections_generated': list(sections.keys()),
+                'prompts_used': prompts_used,
+                'context_length': len(context),
+                'analyst_estimates_length': len(analyst_estimates) if analyst_estimates else 0
             }
             
-            self._log_api_call('chat.enhanced_batch_report', response_preview=report_content[:500])
+            logger.info(f"Successfully generated enhanced batch report for {ticker} using section-specific prompts")
+            self._log_api_call('chat.enhanced_batch_report', response_preview=f"Generated {len(sections)} sections totaling {len(full_content)} characters")
             
             return structured_report
             
@@ -940,102 +865,284 @@ At the end of Narrative, include a short **Action Items** section with 3 bullets
             self._log_api_call('chat.enhanced_batch_report', error=e)
             raise
 
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
+    def _optimize_context_for_section(self, section_type: str, full_context: str, analyst_estimates: str) -> str:
+        """Use AI to intelligently summarize and optimize context for specific section types"""
+        
+        # Define section-specific optimization prompts
+        optimization_prompts = {
+            'title': """
+                Extract and summarize the most important information for creating a compelling report title:
+                - Key financial highlights and major achievements
+                - Most significant revenue/earnings metrics 
+                - Major business developments or strategic announcements
+                - Market-moving information that would be headline-worthy
+                Keep summary under 1500 characters while preserving all critical numbers and key points.
+            """,
+            'key_takeaways': """
+                Extract and summarize information most relevant for key takeaways:
+                - Financial performance metrics and variances vs estimates
+                - Major operational highlights and business segment performance  
+                - Strategic developments and their impact
+                - Forward-looking statements and guidance updates
+                - Market positioning and competitive advantages
+                Keep summary under 2000 characters while preserving specific metrics and percentages.
+            """,
+            'bottomline': """
+                Extract and summarize information for bottom-line investment conclusion:
+                - Overall financial performance assessment
+                - Key risks and opportunities identified
+                - Investment thesis validation or challenges
+                - Valuation considerations and price target implications
+                - Long-term outlook and strategic positioning
+                Keep summary under 2000 characters focusing on investment decision factors.
+            """,
+            'synopsis': """
+                Extract and summarize comprehensive information for executive synopsis:
+                - Complete financial results overview with key metrics
+                - Business segment performance details
+                - Management commentary and strategic updates
+                - Market context and competitive positioning
+                - Forward guidance and outlook statements
+                Keep summary under 2500 characters ensuring comprehensive coverage.
+            """,
+            'narrative': """
+                Extract and summarize detailed information for narrative analysis:
+                - Comprehensive financial performance with detailed breakdowns
+                - Operational metrics and business trends
+                - Management discussion and strategic initiatives
+                - Risk factors and market dynamics
+                - Historical context and trend analysis
+                Keep summary under 3000 characters preserving analytical depth and context.
+            """
+        }
+        
+        section_prompt = optimization_prompts.get(section_type, optimization_prompts['synopsis'])
+        
+        # If context is already reasonably sized, return as-is
+        if len(full_context) <= 4000:
+            return full_context
+        
+        prompt = f"""
+You are an expert financial analyst. Please analyze the following financial document content and analyst estimates, then provide an optimized summary for the '{section_type}' section.
+
+{section_prompt.strip()}
+
+ANALYST ESTIMATES FOR REFERENCE:
+{analyst_estimates[:1000] if analyst_estimates else "No analyst estimates provided"}
+
+FULL DOCUMENT CONTENT TO OPTIMIZE:
+{full_context}
+
+Please provide a focused, optimized summary that retains all critical financial data, percentages, and key insights while being concise enough for effective analysis:
+"""
+
+        try:
+            self._log_api_call('chat.context_optimization', 
+                             prompt=prompt[:500] if self._log_prompts else None,
+                             extra={"section_type": section_type, "original_length": len(full_context)})
+            
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert financial analyst who excels at distilling complex financial documents into focused, actionable summaries while preserving all critical quantitative data."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,  # Low temperature for consistent, factual summarization
+                max_tokens=1000   # Reasonable limit for optimized context
+            )
+            
+            optimized_context = response.choices[0].message.content.strip()
+            
+            logger.info(f"Optimized context for {section_type}: {len(full_context)} -> {len(optimized_context)} chars")
+            self._log_api_call('chat.context_optimization', 
+                             response_preview=optimized_context[:200],
+                             extra={"section_type": section_type, "optimized_length": len(optimized_context)})
+            
+            return optimized_context
+            
+        except Exception as e:
+            logger.error(f"Failed to optimize context for {section_type}: {str(e)}")
+            self._log_api_call('chat.context_optimization', error=e, 
+                             extra={"section_type": section_type, "original_length": len(full_context)})
+            
+            # Fallback to smart truncation if AI optimization fails
+            logger.warning(f"Falling back to truncation for {section_type}")
+            return self._smart_truncate_for_section(section_type, full_context)
+
+    def _smart_truncate_for_section(self, section_type: str, context: str) -> str:
+        """Fallback method for context optimization using smart truncation"""
+        section_limits = {
+            'title': 1500,
+            'key_takeaways': 2500,
+            'bottomline': 2500,
+            'synopsis': 3000,
+            'narrative': 4000
+        }
+        
+        limit = section_limits.get(section_type, 3000)
+        
+        if len(context) <= limit:
+            return context
+            
+        # Try to find a good breaking point (end of sentence or paragraph)
+        truncated = context[:limit]
+        last_period = truncated.rfind('.')
+        last_newline = truncated.rfind('\n')
+        
+        # Use the later of the two, but only if it's reasonably close to the end
+        break_point = max(last_period, last_newline)
+        if break_point > limit * 0.8:  # If break point is within 20% of the end
+            return context[:break_point + 1]
+        else:
+            return truncated
+
     def generate_section_specific_content(self, section_type: str, context: str, 
-                                        analyst_estimates: str, ticker: str) -> str:
-        """Generate content for specific sections using section-specific prompts"""
+                                        analyst_estimates: str, ticker: str) -> tuple[str, str]:
+        """Generate content for specific sections using section-specific prompts with optimized context
+        
+        Returns:
+            tuple: (generated_content, prompt_used)
+        """
+        
+        # Optimize context for this specific section using AI
+        optimized_context = self._optimize_context_for_section(section_type, context, analyst_estimates)
+        
+        logger.info(f"Context optimization for {section_type}: {len(context)} -> {len(optimized_context)} chars")
         
         section_prompts = {
-            "title": f"""Task: Write a concise Markdown H1 title for the report (6–12 words) that highlights the quarter's key angle.
+            "title": f"""Task: Write a compelling, market-focused Markdown H1 title for the earnings report (6–12 words) that captures the key investment angle or market theme. 
+
+Examples of good titles:
+- "Clean Across The Board As Eyes Turn To S232 & US v. GOOGL"  
+- "Broad-Based Beat Drives Momentum Into iPhone Cycle"
+- "Services Strength Offsets iPhone Headwinds"
+- "AI Infrastructure Ramp Supports Long-Term View"
+
+The title should be engaging, capture the main investment theme, and hint at forward-looking catalysts or market dynamics.
 
 CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
+{optimized_context}
 
 Write ONLY the title with # prefix.""",
             
-            "key_takeaways": f"""Inputs: Based on the provided context and analyst estimates
-Task: Write 3–6 Markdown list items under "## Key Takeaways".
-Each must: 
-- include metric + variance vs estimate ($ and %),
-- end with source [src:<id>].
+            "key_takeaways": f"""Task: Write 4-6 compelling Markdown list items under "## Key Takeaways" that highlight the most important investment insights from the quarter.
+
+Structure each bullet to include:
+- Growth drivers and positive momentum indicators
+- Key operational achievements or strategic developments  
+- Performance vs estimates (where material)
+- Forward-looking catalysts or implications
+- Strategic positioning updates (AI, new products, market expansion)
+- End with source citations [src:<id>] where applicable
+
+Examples of good takeaways:
+- "June quarter outperformance led by iPhone and Services, with Services growth of 13% materially better than feared."
+- "Commentary about ramping AI infra and openness to AI M&A is a welcome sign that Apple is focused on improving their AI positioning."
+- "While some June qtr tailwinds fade in September, guidance still implies 2nd strongest quarter of growth since 2022."
+
+Focus on investment implications and growth trajectory, not just variance reporting.
 
 CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
+{optimized_context}
 
 Write the complete Key Takeaways section with heading.""",
             
-            "bottomline": f"""Task: Under "## Bottomline", write ≤200 words in one Markdown paragraph.
-Summarize the most material beats/misses and thesis impact.
+            "bottomline": f"""Task: Under "## Bottomline", write a compelling ≤200 word investment summary that confidently assesses the quarter's results and their implications for the stock.
+
+Focus on:
+- Overall investment thesis impact (positive/negative)  
+- What this quarter tells us about the company's trajectory
+- Key growth drivers and momentum indicators
+- Forward-looking catalysts or concerns
+- Market positioning and competitive dynamics
+- Clear investment implication (bullish/bearish signals)
+
+Tone should be confident and analytical, similar to: "This was Apple's strongest quarterly report/guide in 2+ years, with outperformance broad-based across Product/Services and regions. Historically, this would be a qtr where bulls get louder, but until clarity emerges on tariffs and regulation, we wouldn't expect AAPL to break out."
 
 CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
+{optimized_context}
 
 Write the complete Bottomline section with heading.""",
             
-            "synopsis": f"""Task: Under "## Synopsis", write 1–2 short paragraphs (3–6 sentences total).
-Explain what changed and why it matters, in analyst voice.
+            "synopsis": f"""Task: Under "## Synopsis", write 1–2 engaging paragraphs (4-6 sentences total) that tell the investment story in analyst voice.
+
+Focus on:
+- The main investment narrative and what changed this quarter
+- Growth momentum and operational highlights
+- Strategic developments and forward-looking catalysts  
+- Key risks or considerations
+- Market positioning and competitive dynamics
+- Investment implications going forward
+
+Use confident, analytical language with natural analyst phrasing. Think: "What's the key message institutional investors need to understand about this quarter?"
 
 CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
+{optimized_context}
 
 Write the complete Synopsis section with heading.""",
             
-            "narrative": f"""You are a senior equity research analyst at a top investment bank. 
-Your task is to write the NARRATIVE SECTION of a professional research report for institutional investors. 
-The audience is portfolio managers and buy-side analysts. 
+            "narrative": f"""You are a senior equity research analyst at a top investment bank writing the NARRATIVE SECTION of a research report for institutional investors (portfolio managers, buy-side analysts).
 
-TONE & STYLE:
-- Write in professional sell-side analyst voice: authoritative, confident, concise but narrative-driven. 
-- Incorporate some natural analyst phrasing: e.g., "sigh of relief," "tough to nitpick," "range-bound in the near term."
-- Balance praise with caution: highlight strengths AND risks.
-- Use strong transitions to keep the narrative flowing.
-- Write in Markdown with sub-headings and bullet points where appropriate.
+TONE & STYLE REQUIREMENTS:
+- Write in authoritative, confident sell-side analyst voice with engaging narrative flow
+- Use natural analyst language: "sigh of relief," "tough to nitpick," "clean across the board," "range-bound," "vocally bullish"
+- Balance praise with realism: highlight operational strengths AND strategic considerations  
+- Create compelling thematic framing (e.g., "Broad-based operational outperformance, though near-term risk events still linger")
+- Write with conviction and forward-looking perspective, not just historical reporting
+- Use strong transitions and maintain narrative coherence throughout
 
-CONTENT REQUIREMENTS:
-1. **Opening framing paragraph**: Start with a bold thematic assessment (e.g., "Broad-based outperformance, though near-term risk events linger").  
-2. **Variance analysis**: For revenue, EPS, margins, and segments, compare actuals vs analyst estimates and consensus. Quantify beats/misses in $ and %. Example: "EPS of $1.57, 8% above MSe and 10% ahead of Consensus."  
-3. **Segment detail**: Discuss each major segment (iPhone, Mac, iPad, Services, Wearables) with multiple drivers (demand, product launches, regional subsidies, upgrade cycles).  
-4. **Guidance analysis**: Interpret management's forward guidance; highlight what it implies vs expectations.  
-5. **Strategic themes**: Weave in management commentary on AI, capex, and regulatory issues. Quote or paraphrase CEO/management where impactful.  
-6. **Risk events**: Identify key risks (tariffs, litigation, regulatory rulings) and explain their potential impact on performance and valuation.  
-7. **Forward view**: Discuss how results and guidance affect forward years (FY25/26/27). Highlight catalysts (new iPhone cycle, AI upgrades).  
-8. **Thesis impact**: Link back to the analyst's investment thesis, rating, and price target. Show adjustments to revenue/EPS/PT with clear rationale.  
-9. **Structure**: Use subsections such as:  
-   - ### Financial Summary
-   - ### Business Segments
-   - ### Guidance & Management Commentary
-   - ### Margins & Costs
-   - ### Cash Flow & Capital Allocation
-   - ### Risks & Sensitivities
-   - ### Investment Thesis Impact
+CONTENT STRUCTURE & REQUIREMENTS:
+1. **Thematic Opening (1-2 sentences)**: Bold assessment that frames the entire quarter (e.g., "It's tough to nitpick on any aspect of tonight's results")
 
-FORMATTING:
-- Use Markdown headings and subheadings.  
-- Use inline numbers with sources in brackets [src:10Q:stmt_rev] where available.  
-- Include short bullet lists for clarity when discussing drivers.  
-- Write 600–900 words, structured, and easy to read.  
+2. **Performance Summary**: Comprehensive variance analysis with specific metrics:
+   - Revenue, EPS, margins vs estimates ($ and % variances)
+   - Segment performance with multiple drivers and context
+   - "Apple posted clear June quarter outperformance across Product (5% beat), Services (150bps beat)..."
 
-CRITICAL:
-- Every major point must tie back to actual numbers or management commentary.  
-- Explicitly compare actuals vs estimates (both in $ and %).  
-- Always conclude with a perspective on near-term stock implications (e.g., "range-bound near term due to risks, but upside as catalysts resolve").  
+3. **Segment Deep-Dive**: Each major segment with rich operational context:
+   - iPhone: upgrade cycles, regional dynamics, product mix, AI positioning
+   - Services: growth acceleration, regulatory resilience, monetization trends  
+   - Mac/iPad/Wearables: product cycle impacts, competitive positioning
+   - Include management commentary and strategic implications
+
+4. **Guidance & Forward View**: 
+   - Interpret management guidance vs expectations
+   - Discuss FY25/FY26 trajectory and growth drivers
+   - AI infrastructure ramp, new product cycles, market expansion
+
+5. **Strategic Themes**: 
+   - AI strategy and infrastructure investments
+   - Capital allocation and cash flow generation
+   - Regulatory landscape (tariffs, antitrust) and risk management
+   - Competitive positioning and market share dynamics
+
+6. **Risk Assessment & Catalysts**:
+   - Near-term risk events and their potential impact
+   - Forward catalysts (product launches, regulatory clarity, AI adoption)
+   - Market positioning for next growth phase
+
+7. **Investment Thesis Update**:
+   - Rating and price target implications
+   - Updated estimates and valuation framework
+   - Clear investment recommendation with supporting rationale
+
+FORMATTING & METRICS:
+- Use subsections: Financial Summary, Business Segments, Guidance & Management Commentary, etc.
+- Include specific numbers with sources [src:10Q:stmt_rev] 
+- Quote or paraphrase impactful management commentary
+- Length: 800-1000 words with strong narrative flow
+- End with clear near-term outlook and catalyst timeline
+
+CRITICAL SUCCESS FACTORS:
+- Every major point ties to actual numbers or management statements
+- Explicit variance analysis ($ and %) for all key metrics
+- Forward-looking perspective on growth trajectory and catalysts
+- Professional confidence balanced with realistic risk assessment
+- Strong thematic narrative that institutional investors can act on
 
 CONTEXT:
-{context}
-
-ANALYST ESTIMATES:
-{analyst_estimates}
+{context[:4000]}
 
 Write the complete Narrative section with heading and all subsections."""
         }
@@ -1044,29 +1151,44 @@ Write the complete Narrative section with heading and all subsections."""
             raise ValueError(f"Unknown section type: {section_type}")
         
         try:
-            system_message = """You are a professional equity research assistant trained to generate concise, factual, and investor-grade research updates.
+            system_message = """You are a senior equity research analyst at a top-tier investment bank generating investor-grade research content. Your writing should be engaging, confident, and focused on investment implications and growth drivers.
 
 Rules:
 - Output must be in MARKDOWN format, not JSON.
 - Each section must use Markdown headings (#, ##, ###).
 - Every numeric claim must cite its source using [src:<id>] inline.
 - When comparing vs analyst estimates, show both absolute ($) and % variances.
-- Keep tone professional, precise, and suitable for institutional investors."""
+- Emphasize growth momentum, operational excellence, and strategic positioning.
+- Use natural analyst language: "sigh of relief," "tough to nitpick," "clean beat," etc.
+- Focus on forward-looking catalysts and investment implications.
+- Balance performance analysis with strategic insights and market positioning."""
 
+            prompt_to_use = section_prompts[section_type]
+            
+            # Store the prompt for debugging/transparency (could be stored in metadata)
+            logger.info(f"Using section-specific prompt for {section_type} (length: {len(prompt_to_use)} chars)")
+            
+            self._log_api_call(f'chat.section_{section_type}', prompt=prompt_to_use)
+            
             response = openai.ChatCompletion.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": section_prompts[section_type]}
+                    {"role": "user", "content": prompt_to_use}
                 ],
                 temperature=0.2,
                 max_tokens=2000
             )
             
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            
+            self._log_api_call(f'chat.section_{section_type}', response_preview=content[:200])
+            
+            return content, prompt_to_use
             
         except Exception as e:
             logger.error(f"Error generating {section_type} section: {str(e)}")
+            self._log_api_call(f'chat.section_{section_type}', error=e)
             raise
 
     def generate_batch_report(self, batch_analyses: List[Dict], context_documents: List[Dict], 

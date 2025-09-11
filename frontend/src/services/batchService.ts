@@ -81,6 +81,11 @@ export interface BatchReport {
     generated_at: string;
     model_used: string;
     report_type: string;
+    generation_method?: string;
+    sections_generated?: string[];
+    prompts_used?: Record<string, string>;
+    context_length?: number;
+    analyst_estimates_length?: number;
   };
   // Legacy fields for backward compatibility
   executive_summary?: string;
@@ -151,7 +156,13 @@ class BatchService {
 
   // Generate batch report
   async generateBatchReport(ticker: string, batchId: string): Promise<BatchReport> {
-    const response: AxiosResponse = await api.post(`/companies/${ticker}/batches/${batchId}/report`);
+    const response: AxiosResponse = await api.post(
+      `/companies/${ticker}/batches/${batchId}/report`,
+      {},
+      {
+        timeout: 600000, // 10 minutes for enhanced batch report generation with AI optimization
+      }
+    );
     return response.data.data.report;
   }
 
